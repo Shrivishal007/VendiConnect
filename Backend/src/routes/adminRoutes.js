@@ -1,18 +1,15 @@
-/**
- * routes/adminRoutes.js  *** NEW THIS WEEK ***
- * -----------------------------------------------------------------------
- */
-
 import express from 'express';
 import { login, getDashboard } from '../controllers/adminController.js';
+import { getPilotReport } from '../controllers/pilotController.js';
 import { requireAdminAuth } from '../middleware/authMiddleware.js';
+import { adminLoginLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
-// POST /api/admin/login - public
-router.post('/login', login);
+router.post('/login', adminLoginLimiter, login);
 
-// GET /api/admin/dashboard - protected, requires a valid JWT
 router.get('/dashboard', requireAdminAuth, getDashboard);
+
+router.get('/pilot-report', requireAdminAuth, getPilotReport);
 
 export default router;

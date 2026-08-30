@@ -1,20 +1,6 @@
-/**
- * controllers/activityLogController.js  *** NEW ***
- * -----------------------------------------------------------------------
- * Read-only endpoint over ActivityLog, mainly for the admin dashboard
- * ("show me what this vendor has been doing") and debugging. Writes to
- * ActivityLog happen via services/activityLogService.logActivity() calls
- * sprinkled into the controllers that perform the actual actions - see
- * locationController.js and ratingController.js.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 import { getRecentActivity } from '../services/activityLogService.js';
 
-/**
- * GET /api/vendors/:vendorId/activity?limit=20
- */
 export async function getVendorActivity(req, res) {
   try {
     const { vendorId } = req.params;

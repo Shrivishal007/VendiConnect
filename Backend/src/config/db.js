@@ -1,11 +1,3 @@
-/**
- * config/db.js
- * -----------------------------------------------------------------------
- * Establishes and exports the MongoDB Atlas connection using Mongoose.
- * ESM module - imported once from app.js at boot.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 
 const connectDB = async () => {
@@ -16,9 +8,7 @@ const connectDB = async () => {
       throw new Error('MONGO_URI is not defined in environment variables');
     }
 
-    await mongoose.connect(uri, {
-      maxPoolSize: 10, // M0 free tier caps connections; keep this conservative
-    });
+    await mongoose.connect(uri, { maxPoolSize: 10 });
 
     console.log(`[DB] MongoDB Atlas connected: ${mongoose.connection.host}`);
 

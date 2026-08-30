@@ -1,26 +1,3 @@
-/**
- * models/VendorSession.js  *** NEW - aligns backend with ER diagram ***
- * -----------------------------------------------------------------------
- * Tracks a vendor's WhatsApp session state and DPDPA consent status.
- * This is the piece your ER diagram already committed to (VendorSession:
- * Session_ID, Vendor_ID, WhatsApp, SessionStatus, LastActive, Consent)
- * but that never got built - it's the actual DPDPA consent record, which
- * matters for the "User consent validation" line in your Testing
- * Strategy slide.
- *
- * Naming note: the ER diagram's `WhatsApp` attribute is stored here as
- * `WhatsAppHash` - same treatment as Vendor.PhoneHash in Week 1-2, for
- * the same reason (never persist a raw contact identifier). This is a
- * deliberate, minor naming deviation from the diagram, not a missed
- * field - worth a one-line footnote on the ER diagram slide so it
- * doesn't look like an inconsistency to a reviewer.
- *
- * One doc per vendor (like VendorLocation) - a vendor has exactly one
- * current session state, upserted as their WhatsApp interactions and
- * consent status change over time.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
@@ -35,12 +12,6 @@ const VendorSessionSchema = new Schema(
       index: true,
     },
 
-    // Hashed WhatsApp contact identifier - see naming note above.
-    // Uses the same HMAC-SHA256 scheme as Vendor.PhoneHash
-    // (utils/geoPrivacy.hashPhoneNumber), so a vendor whose WhatsApp
-    // number IS their registered phone number produces the same hash
-    // in both fields - useful for cross-referencing without ever
-    // comparing raw numbers.
     WhatsAppHash: {
       type: String,
       required: [true, 'WhatsAppHash is required'],
@@ -59,19 +30,22 @@ const VendorSessionSchema = new Schema(
       default: Date.now,
     },
 
-    // DPDPA consent flag - vendor has explicitly agreed (via a WhatsApp
-    // opt-in flow the messaging-service teammate implements) to have
-    // their location and profile data processed by VendiConnect.
     Consent: {
       type: Boolean,
       default: false,
     },
 
-    // Not in the original ER diagram, but a near-mandatory companion to
-    // a boolean Consent flag for any real DPDPA audit trail - "consent
-    // was given" is much weaker without "and here's exactly when."
-    // Left nullable so it doesn't force a diagram change - purely additive.
     ConsentTimestamp: {
+      type: Date,
+      default: null,
+    },
+
+    NoticeVersion: {
+      type: String,
+      default: null,
+    },
+
+    ConsentWithdrawnAt: {
       type: Date,
       default: null,
     },

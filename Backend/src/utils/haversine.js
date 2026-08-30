@@ -1,12 +1,3 @@
-/**
- * utils/haversine.js
- * -----------------------------------------------------------------------
- * Great-circle distance (Haversine formula) and walking-ETA helpers.
- * Pure functions, no DB/Express dependencies. Unchanged from Weeks 1-2,
- * ported to ESM.
- * -----------------------------------------------------------------------
- */
-
 const EARTH_RADIUS_KM = 6371;
 const DEFAULT_WALKING_SPEED_KMH = parseFloat(process.env.WALKING_SPEED_KMH) || 3.5;
 
@@ -14,9 +5,6 @@ function toRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-/**
- * Great-circle distance between two lat/lng points, in kilometers.
- */
 export function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
   [lat1, lon1, lat2, lon2].forEach((coord) => {
     if (typeof coord !== 'number' || Number.isNaN(coord)) {
@@ -38,9 +26,6 @@ export function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
   return EARTH_RADIUS_KM * c;
 }
 
-/**
- * Converts a distance in km to an estimated walking time in minutes.
- */
 export function distanceToEtaMinutes(distanceKm, walkingSpeedKmh = DEFAULT_WALKING_SPEED_KMH) {
   if (walkingSpeedKmh <= 0) {
     throw new RangeError('walkingSpeedKmh must be greater than 0');
@@ -50,9 +35,6 @@ export function distanceToEtaMinutes(distanceKm, walkingSpeedKmh = DEFAULT_WALKI
   return Math.max(1, Math.round(minutes));
 }
 
-/**
- * Convenience wrapper: returns both distance (km) and ETA (minutes).
- */
 export function getDistanceAndEta(pointA, pointB, walkingSpeedKmh = DEFAULT_WALKING_SPEED_KMH) {
   const distanceKm = calculateHaversineDistanceKm(pointA.lat, pointA.lng, pointB.lat, pointB.lng);
   const etaMinutes = distanceToEtaMinutes(distanceKm, walkingSpeedKmh);

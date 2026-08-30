@@ -1,21 +1,6 @@
-/**
- * controllers/alertController.js
- * -----------------------------------------------------------------------
- * Thin REST wrapper around services/alertService.js, retained mainly for
- * admin-dashboard manual testing/debugging of the throttle logic. The
- * PRODUCTION path for alerts is now services/proximityWorker.js, called
- * automatically from locationController - this endpoint is a secondary,
- * manual trigger.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 import { checkAndThrottleAlert } from '../services/alertService.js';
 
-/**
- * POST /api/alerts
- * Body: { vendorId, residentId, etaMinutes, distanceKm }
- */
 export async function createAlert(req, res) {
   try {
     const { vendorId, residentId, etaMinutes, distanceKm } = req.body;

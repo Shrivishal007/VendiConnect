@@ -1,27 +1,7 @@
-/**
- * utils/geoPrivacy.js
- * -----------------------------------------------------------------------
- * DPDPA 2023 compliance helpers (unchanged from Weeks 1-2, ported to ESM).
- *
- * 1. approximateCoordinates(): truncates raw lat/lng to a fixed decimal
- *    precision so stored vendor locations only ever resolve to a
- *    ~50-100m radius "block", never an exact pinpoint.
- * 2. hashPhoneNumber(): one-way HMAC-SHA256 hash of phone numbers so raw
- *    numbers are never persisted in plaintext.
- * -----------------------------------------------------------------------
- */
-
 import crypto from 'crypto';
 
-// 3 decimal places ≈ 111m latitude grid / ~85-110m longitude grid in India.
 const DECIMAL_PRECISION = 3;
 
-/**
- * Truncates raw GPS coordinates to DECIMAL_PRECISION decimal places.
- * @param {number} latitude
- * @param {number} longitude
- * @returns {{ latitude: number, longitude: number }}
- */
 export function approximateCoordinates(latitude, longitude) {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     throw new TypeError('approximateCoordinates expects numeric latitude and longitude');
@@ -45,11 +25,6 @@ export function approximateCoordinates(latitude, longitude) {
   };
 }
 
-/**
- * Builds a privacy-truncated GeoJSON Point: { type: 'Point', coordinates: [lng, lat] }.
- * @param {number} latitude
- * @param {number} longitude
- */
 export function toApproximateGeoPoint(latitude, longitude) {
   const approx = approximateCoordinates(latitude, longitude);
   return {
@@ -58,11 +33,6 @@ export function toApproximateGeoPoint(latitude, longitude) {
   };
 }
 
-/**
- * One-way HMAC-SHA256 hash of a phone number, keyed with a server secret.
- * @param {string} rawPhoneNumber
- * @returns {string} hex-encoded hash
- */
 export function hashPhoneNumber(rawPhoneNumber) {
   if (!rawPhoneNumber || typeof rawPhoneNumber !== 'string') {
     throw new TypeError('hashPhoneNumber expects a non-empty string');
@@ -77,11 +47,6 @@ export function hashPhoneNumber(rawPhoneNumber) {
   return crypto.createHmac('sha256', secret).update(normalized).digest('hex');
 }
 
-/**
- * Minimal phone normalizer: strips all non-digit characters except a
- * leading '+'. Swap for libphonenumber-js in production.
- * @param {string} phone
- */
 export function normalizePhoneNumber(phone) {
   const trimmed = phone.trim();
   const hasPlus = trimmed.startsWith('+');
@@ -89,10 +54,6 @@ export function normalizePhoneNumber(phone) {
   return hasPlus ? `+${digitsOnly}` : digitsOnly;
 }
 
-/**
- * Display-safe masked phone number for admin dashboards.
- * @param {string} rawPhoneNumber
- */
 export function maskPhoneNumber(rawPhoneNumber) {
   const normalized = normalizePhoneNumber(rawPhoneNumber);
   if (normalized.length <= 4) return '*'.repeat(normalized.length);

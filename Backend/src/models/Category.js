@@ -1,11 +1,3 @@
-/**
- * models/Category.js
- * -----------------------------------------------------------------------
- * Supporting lookup model referenced by Vendor.Category_ID
- * (e.g. "Vegetables", "Fruits", "Street Food").
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 
 const { Schema } = mongoose;

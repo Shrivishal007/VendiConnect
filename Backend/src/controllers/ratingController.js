@@ -1,27 +1,12 @@
-/**
- * controllers/ratingController.js  *** NEW THIS WEEK ***
- * -----------------------------------------------------------------------
- * POST /api/ratings - resident submits (or updates) a rating for a
- * vendor. After the write succeeds, triggers ratingService's
- * aggregation pipeline to keep Vendor.AvgRating/RatingCount in sync.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 import Rating from '../models/Rating.js';
 import Vendor from '../models/Vendor.js';
+import Alert from '../models/Alert.js';
 import { recalculateAvgRating } from '../services/ratingService.js';
 import { logActivity } from '../services/activityLogService.js';
 
-/**
- * POST /api/ratings
- * Body: { vendorId, residentId, ratingValue, review? }
- *
- * Uses an upsert on the unique (Vendor_ID, Resident_ID) compound index -
- * a resident re-rating the same vendor updates their existing rating
- * rather than creating a duplicate, which keeps the aggregation
- * pipeline's average correct without needing extra dedupe logic there.
- */
+const RATING_PROXIMITY_WINDOW_HOURS = parseInt(process.env.RATING_PROXIMITY_WINDOW_HOURS, 10) || 2;
+
 export async function createRating(req, res) {
   try {
     const { vendorId, residentId, ratingValue, review } = req.body;
@@ -46,6 +31,20 @@ export async function createRating(req, res) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
+    const proximityWindowStart = new Date(Date.now() - RATING_PROXIMITY_WINDOW_HOURS * 60 * 60 * 1000);
+    const qualifyingAlert = await Alert.exists({
+      Vendor_ID: vendorId,
+      Resident_ID: residentId,
+      Timestamp: { $gte: proximityWindowStart },
+    });
+
+    if (!qualifyingAlert) {
+      return res.status(403).json({
+        success: false,
+        message: `Rating rejected: no proximity alert found for this vendor/resident pair in the last ${RATING_PROXIMITY_WINDOW_HOURS} hour(s). The vendor must have actually passed nearby before you can rate them.`,
+      });
+    }
+
     const rating = await Rating.findOneAndUpdate(
       { Vendor_ID: vendorId, Resident_ID: residentId },
       {
@@ -58,12 +57,8 @@ export async function createRating(req, res) {
       { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
     );
 
-    // "Database trigger" step: recompute AvgRating/RatingCount from the
-    // full Rating set for this vendor via the aggregation pipeline.
     const { avgRating, ratingCount } = await recalculateAvgRating(vendorId);
 
-    // Fire-and-forget audit trail entry - matches ActivityLog's ER-diagram
-    // role as an append-only log, never blocks the response.
     logActivity(vendorId, 'Rating Received', `${ratingValue}-star rating recorded (vendor avg now ${avgRating})`);
 
     return res.status(201).json({
@@ -76,11 +71,6 @@ export async function createRating(req, res) {
       },
     });
   } catch (err) {
-    // Duplicate-key races (two near-simultaneous submits for the same
-    // pair) fall through to findOneAndUpdate's upsert semantics in the
-    // vast majority of cases, but a driver-level E11000 can still slip
-    // through under heavy concurrency - surface it as a 409 rather than
-    // a generic 500.
     if (err.code === 11000) {
       return res
         .status(409)

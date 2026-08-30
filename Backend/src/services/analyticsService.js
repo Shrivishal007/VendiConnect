@@ -1,50 +1,14 @@
-/**
- * services/analyticsService.js  *** NEW THIS WEEK ***
- * -----------------------------------------------------------------------
- * Week 4: generates a clean, self-contained weekly summary for a single
- * vendor - past 7 days of Alert activity (how many residents were
- * notified) plus Rating activity. The output shape is intentionally
- * flat and consumer-agnostic: your teammate's WhatsApp messaging
- * service can pull this JSON and template it directly into a weekly
- * WhatsApp digest message without needing to know anything about
- * Mongo/aggregation internals.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 import Alert from '../models/Alert.js';
 import Rating from '../models/Rating.js';
 import Vendor from '../models/Vendor.js';
+import ActivityLog from '../models/ActivityLog.js';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * Builds the weekly analytics summary for one vendor.
- *
- * @param {string} vendorId
- * @returns {Promise<Object|null>} summary object, or null if the vendor doesn't exist
- *
- * Example return shape:
- * {
- *   vendorId: "66df...",
- *   vendorName: "Ramesh's Vegetable Cart",
- *   period: { from: "2026-08-19T00:00:00.000Z", to: "2026-08-26T00:00:00.000Z" },
- *   alerts: {
- *     totalAlertsSent: 42,
- *     uniqueResidentsNotified: 18,
- *     avgEtaMinutesAtAlert: 6.3
- *   },
- *   ratings: {
- *     newRatingsThisWeek: 5,
- *     avgRatingThisWeek: 4.4,
- *     overallAvgRating: 4.2,
- *     overallRatingCount: 37
- *   },
- *   generatedAt: "2026-08-26T09:00:00.000Z"
- * }
- */
 export async function generateWeeklyVendorSummary(vendorId) {
-  const vendorObjectId = new mongoose.Types.ObjectId(vendorId);
+  const vendorObjectId =
+    typeof vendorId === 'string' ? new mongoose.Types.ObjectId(vendorId) : vendorId;
 
   const vendor = await Vendor.findById(vendorObjectId).select('VendorName AvgRating RatingCount').lean();
   if (!vendor) {
@@ -70,8 +34,6 @@ export async function generateWeeklyVendorSummary(vendorId) {
     ratings: {
       newRatingsThisWeek: ratingStats.newRatingsThisWeek,
       avgRatingThisWeek: ratingStats.avgRatingThisWeek,
-      // Overall (all-time) figures come straight from the Vendor doc's
-      // denormalized fields, kept fresh by ratingService.recalculateAvgRating().
       overallAvgRating: vendor.AvgRating,
       overallRatingCount: vendor.RatingCount,
     },
@@ -79,15 +41,6 @@ export async function generateWeeklyVendorSummary(vendorId) {
   };
 }
 
-/**
- * Aggregates Alert documents for the vendor in the given window:
- * total alerts sent, count of DISTINCT residents notified (a resident
- * could be alerted more than once in a week if outside the 45-min
- * throttle window on different days), and the average ETA at the time
- * of alert (a rough proxy for "how close does this vendor typically get
- * to residents before they're notified").
- * @private
- */
 async function getWeeklyAlertStats(vendorObjectId, periodStart, periodEnd) {
   const [result] = await Alert.aggregate([
     {
@@ -123,10 +76,6 @@ async function getWeeklyAlertStats(vendorObjectId, periodStart, periodEnd) {
   );
 }
 
-/**
- * Aggregates Rating documents created for the vendor in the given window.
- * @private
- */
 async function getWeeklyRatingStats(vendorObjectId, periodStart, periodEnd) {
   const [result] = await Rating.aggregate([
     {
@@ -157,4 +106,92 @@ async function getWeeklyRatingStats(vendorObjectId, periodStart, periodEnd) {
       avgRatingThisWeek: 0,
     }
   );
+}
+
+async function getStarDistribution(vendorObjectId, periodStart, periodEnd) {
+  const rows = await Rating.aggregate([
+    {
+      $match: {
+        Vendor_ID: vendorObjectId,
+        RatingDate: { $gte: periodStart, $lte: periodEnd },
+      },
+    },
+    { $group: { _id: '$RatingValue', count: { $sum: 1 } } },
+  ]);
+
+  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  rows.forEach((row) => {
+    if (row._id >= 1 && row._id <= 5) {
+      distribution[row._id] = row.count;
+    }
+  });
+
+  return distribution;
+}
+
+async function getVendorActiveHours(vendorObjectId, periodStart, periodEnd) {
+  const results = await ActivityLog.aggregate([
+    {
+      $match: {
+        Vendor_ID: vendorObjectId,
+        Event: 'Location Updated',
+        EventTime: { $gte: periodStart, $lte: periodEnd },
+      },
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$EventTime' } },
+        firstPing: { $min: '$EventTime' },
+        lastPing: { $max: '$EventTime' },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalHours: {
+          $sum: { $divide: [{ $subtract: ['$lastPing', '$firstPing'] }, 1000 * 60 * 60] },
+        },
+        activeDays: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const result = results[0];
+  return {
+    totalActiveHours: result ? Math.round(result.totalHours * 10) / 10 : 0,
+    activeDays: result ? result.activeDays : 0,
+  };
+}
+
+export async function generateVendorAnalytics(vendorId, windowDays = 7) {
+  const vendorObjectId =
+    typeof vendorId === 'string' ? new mongoose.Types.ObjectId(vendorId) : vendorId;
+
+  const vendor = await Vendor.findById(vendorObjectId).select('VendorName AvgRating RatingCount Status').lean();
+  if (!vendor) {
+    return null;
+  }
+
+  const periodEnd = new Date();
+  const periodStart = new Date(periodEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
+
+  const [alertStats, starDistribution, activeHours] = await Promise.all([
+    getWeeklyAlertStats(vendorObjectId, periodStart, periodEnd),
+    getStarDistribution(vendorObjectId, periodStart, periodEnd),
+    getVendorActiveHours(vendorObjectId, periodStart, periodEnd),
+  ]);
+
+  return {
+    vendorId: String(vendor._id),
+    vendorName: vendor.VendorName,
+    currentStatus: vendor.Status,
+    period: { from: periodStart.toISOString(), to: periodEnd.toISOString(), windowDays },
+    totalResidentAlerts: alertStats.totalAlertsSent,
+    uniqueResidentsNotified: alertStats.uniqueResidentsNotified,
+    activeHours,
+    starDistribution,
+    overallAvgRating: vendor.AvgRating,
+    overallRatingCount: vendor.RatingCount,
+    generatedAt: new Date().toISOString(),
+  };
 }

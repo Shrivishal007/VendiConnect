@@ -1,59 +1,84 @@
-# VendiConnect Backend
+# VendorConnect
 
-Business logic, database, and REST API Gateway for VendiConnect. Owned scope: **Node.js/Express + MongoDB only** — no frontend code, no WhatsApp Cloud API payload parsing (that layer calls into this API once it has already parsed inbound WhatsApp messages).
+A WhatsApp-based platform that connects local **residents** with **mobile street vendors** — vendors share their live location via WhatsApp (no app, no literacy required), and nearby residents get privacy-safe proximity alerts with ETA. Residents buy directly and rate vendors afterward.
 
-## Folder structure
+## Problem
+
+Street vendors are a large part of the informal economy but are invisible to digital platforms — most have no smartphone literacy and can't use typical seller apps. VendorConnect requires **zero new app installs and zero reading/writing** from vendors, using WhatsApp (already near-universal) as the entire vendor interface.
+
+## Core Features
+
+- **Vendor side (WhatsApp only):** register via first message, pick category from a tap-to-select list, share live location natively — no typing.
+- **Resident side (mobile app):** phone OTP login, set home + notification radius, see nearby active vendors on a map (approximate, not exact), get push alerts with ETA, rate vendors post-purchase.
+- **Privacy by design:** residents never see exact vendor coordinates or phone numbers; vendors never see resident addresses. Locations auto-expire via TTL when a vendor goes inactive.
+- **Vendor analytics:** passive tracking (alerts sent, ratings, active areas) delivered back as a simple weekly WhatsApp summary — no dashboard vendors have to open.
+- **Admin web dashboard:** manage vendors/residents, live map monitoring, usage analytics, crash/error logs.
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Vendor interface | WhatsApp Business Cloud API (Meta) — Live Location, interactive lists |
+| Backend | Node.js + Express |
+| Database | MongoDB Atlas (free M0) + Mongoose — 2dsphere geo indexes, TTL auto-expiry |
+| Resident app | React Native (Expo) |
+| Admin dashboard | React.js + Recharts |
+| Auth | Firebase Phone Auth (residents), JWT + bcrypt (admin) |
+| Push notifications | Firebase Cloud Messaging |
+| Maps | Leaflet / react-native-maps + OpenStreetMap tiles |
+| Hosting | Render / Railway (free tier) |
+| Monitoring | Sentry / Firebase Crashlytics |
+
+Fully buildable on free tiers at prototype scale. Main lead-time risk: Meta Business verification for the WhatsApp Cloud API — start early.
+
+## Architecture (high level)
 
 ```
-vendiconnect-backend/
-├── .env.example
-├── package.json
-└── src/
-    ├── app.js                        # Express entry point, mounts routes
-    ├── config/
-    │   └── db.js                     # Mongoose/Atlas connection
-    ├── models/
-    │   ├── Vendor.js                 # Static vendor profile
-    │   ├── VendorLocation.js         # Live location: 2dsphere + TTL indexes
-    │   ├── Resident.js
-    │   ├── Alert.js                  # Throttle audit log
-    │   ├── Rating.js
-    │   └── Category.js               # Supporting ref for Vendor.Category_ID
-    ├── utils/
-    │   ├── geoPrivacy.js             # Coordinate truncation + phone hashing (DPDPA 2023)
-    │   └── haversine.js              # Distance + walking ETA
-    ├── services/
-    │   └── alertService.js           # Notification throttling business logic
-    ├── controllers/
-    │   ├── locationController.js     # Update vendor location (TTL refresh)
-    │   ├── proximityController.js    # $near nearby-vendor search
-    │   └── alertController.js        # Throttled alert creation endpoint
-    └── routes/
-        ├── vendorRoutes.js
-        └── alertRoutes.js
+Vendor (WhatsApp) --live location/category--> Webhook (Express)
+                                                    |
+                                                    v
+                                          MongoDB (geo + TTL)
+                                                    |
+                              +---------------------+---------------------+
+                              |                                           |
+                    Proximity match + haversine ETA                 Admin Dashboard
+                              |                                     (React web)
+                              v
+                    FCM push --> Resident App (React Native)
+                              |
+                              v
+                    Rating --> stored --> feeds vendor's weekly summary
 ```
 
-## Setup
+## Data Model (summary)
 
-```bash
-npm install
-cp .env.example .env   # fill in MONGO_URI and PHONE_HASH_SECRET
-npm run dev             # nodemon, or `npm start` for plain node
-```
+- **Vendor** — whatsappNumber, name, category, avgRating, isActive
+- **LocationPing** — vendorId, geo (GeoJSON Point, 2dsphere), expiresAt (TTL)
+- **Resident** — phone (Firebase UID), homeLocation, notificationRadius
+- **Rating** — vendorId, residentId (hashed), stars, timestamp
+- **AlertLog** — vendorId, residentId, distanceAtAlert, etaMinutes, timestamp
+- **AdminUser** — email, passwordHash, role
 
-## Key endpoints
+## Key Design Decisions
 
-| Method | Route                              | Purpose                                              |
-|--------|-------------------------------------|-------------------------------------------------------|
-| POST   | `/api/vendors/:vendorId/location`  | Upsert vendor's live location (called after WhatsApp Live Location parse) |
-| GET    | `/api/vendors/nearby?lat=&lng=&radius=` | Geospatial search for the resident app's map          |
-| POST   | `/api/alerts`                       | Throttle-checked alert creation (called before an FCM push) |
-| GET    | `/health`                           | Uptime check (useful for pinging a Render/Railway free-tier instance to reduce cold starts) |
+- **No voice-to-coordinates**: replaced with WhatsApp's native Live Location — removes the biggest technical risk (speech recognition on informal spoken directions).
+- **Meta Cloud API directly**, not Twilio — free, no markup.
+- **TTL indexes**, not cron jobs, for auto-expiring stale vendor locations.
+- **Haversine ETA**, not paid Distance Matrix APIs — free and accurate enough.
+- **OpenStreetMap**, not Google Maps — avoids billing-account requirement.
+- **Passive analytics** for vendors (system-tracked signals + optional weekly WhatsApp poll) instead of manual data entry — vendors can't be expected to fill forms.
 
-## Design notes worth knowing
+## Status
 
-- **No cron jobs for expiry.** `VendorLocation.ExpiresAt` has a TTL index (`expireAfterSeconds: 0`). MongoDB's own background TTL monitor reaps expired docs roughly once every 60s — every location ping simply rewrites `ExpiresAt` to `now + 30min`, which is what "refreshes" the countdown.
-- **Privacy is applied at the write boundary.** `toApproximateGeoPoint()` truncates raw GPS to ~100m *before* it's ever passed to `VendorLocation`, and `hashPhoneNumber()` HMAC-hashes phone numbers before they touch `Vendor.PhoneHash` / `Resident.ResidentPhoneHash`. Neither model file accepts raw coordinates or raw phone strings by design — that conversion is the controller's job.
-- **`AvgRating` is a deliberate denormalization** on `Vendor`, trading write complexity (must be recalculated whenever `Rating` changes) for fast reads on the map/list view, avoiding a join/aggregation on every proximity query.
-- **Alert throttling uses check-then-insert**, not a DB-level constraint, which is adequate for M0-tier traffic. If concurrent double-submits become a real problem at scale, that's the place to add a transaction or short-lived unique index.
-- **GeoJSON coordinate order is `[longitude, latitude]`** — opposite of the usual "lat, lng" convention — this trips people up constantly, so it's called out explicitly in `VendorLocation.js` and `proximityController.js`.
+📋 Planning complete — architecture and 5-week execution plan finalized. Implementation started.
+
+**Timeline (5 weeks):**
+1. Foundations — repo setup, Meta verification started, DB schema, Firebase project
+2. Vendor onboarding + location ingestion (WhatsApp webhook, geo storage, TTL)
+3. Resident app core (auth, map, proximity alerts)
+4. Ratings + vendor weekly reports + admin dashboard
+5. Testing, deployment, documentation, demo
+
+## Societal Impact
+
+Digital inclusion infrastructure for the informal economy — no new hardware, no app install, no literacy required from vendors, with privacy protection built in for both sides rather than added later.

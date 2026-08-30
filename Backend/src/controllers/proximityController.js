@@ -1,31 +1,11 @@
-/**
- * controllers/proximityController.js
- * -----------------------------------------------------------------------
- * REST endpoint powering the resident app's map: on-demand "vendors near
- * this point" search, using the 2dsphere index on VendorLocation.geo.
- *
- * *** MODIFIED - ER-diagram alignment pass ***
- * Added optional `category` and `minRating` query params. This is what
- * actually makes ResidentCategoryPreference (see
- * controllers/residentPreferenceController.js) useful in practice - the
- * React app reads a resident's saved preferences, then passes the
- * chosen category id(s) here to filter the map. Kept as a generic query
- * param rather than reading the preference table server-side, since the
- * resident may also want to search ad-hoc for a category they haven't
- * saved as a standing preference.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 import VendorLocation from '../models/VendorLocation.js';
 import { getDistanceAndEta } from '../utils/haversine.js';
+import { computeVendorStatus } from '../utils/vendorStatus.js';
 
 const DEFAULT_RADIUS_METERS = 1000;
 const MAX_RADIUS_METERS = 5000;
 
-/**
- * GET /api/vendors/nearby?lat=<num>&lng=<num>&radius=<meters>&category=<id>&minRating=<num>
- */
 export async function getNearbyVendors(req, res) {
   try {
     const { lat, lng, category, minRating } = req.query;
@@ -51,14 +31,10 @@ export async function getNearbyVendors(req, res) {
       return res.status(400).json({ success: false, message: 'radius must be a positive number' });
     }
 
-    // Optional category filter - validated but not required, so existing
-    // callers that don't pass it keep working unchanged.
     if (category && !mongoose.Types.ObjectId.isValid(category)) {
       return res.status(400).json({ success: false, message: 'Invalid category id' });
     }
 
-    // Optional minimum-rating filter (the "Rating-based filtering" half
-    // of slide 12's deliverable).
     let minRatingValue;
     if (minRating !== undefined) {
       minRatingValue = parseFloat(minRating);
@@ -71,8 +47,6 @@ export async function getNearbyVendors(req, res) {
 
     const cappedRadius = Math.min(radius, MAX_RADIUS_METERS);
 
-    // Expired (TTL-reaped) locations are already gone by the time this
-    // query runs - no need to manually filter by ExpiresAt.
     const vendorMatch = { Status: 'ACTIVE' };
     if (category) {
       vendorMatch.Category_ID = category;
@@ -94,10 +68,6 @@ export async function getNearbyVendors(req, res) {
       .limit(50)
       .lean();
 
-    // populate's `match` returns null (not a removed array element) for
-    // vendors that don't match Status/Category_ID - filter those out,
-    // then apply the minRating filter (can't express ">=" cleanly inside
-    // populate's match alongside the other conditions, so it's applied here).
     const activeResults = nearbyLocations.filter(
       (loc) =>
         loc.Vendor_ID !== null &&
@@ -113,6 +83,13 @@ export async function getNearbyVendors(req, res) {
         { lat: vendorLat, lng: vendorLng }
       );
 
+      const distanceMeters = distanceKm * 1000;
+
+      const status = computeVendorStatus(loc.Vendor_ID, loc, {
+        distanceMeters,
+        notificationRadiusMeters: cappedRadius / 2,
+      });
+
       return {
         Vendor_ID: loc.Vendor_ID._id,
         VendorName: loc.Vendor_ID.VendorName,
@@ -122,6 +99,7 @@ export async function getNearbyVendors(req, res) {
         approximateLocation: { latitude: vendorLat, longitude: vendorLng },
         distanceKm,
         etaMinutes,
+        status,
         lastUpdated: loc.UpdatedAt,
       };
     });

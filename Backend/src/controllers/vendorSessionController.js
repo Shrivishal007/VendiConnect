@@ -1,31 +1,12 @@
-/**
- * controllers/vendorSessionController.js  *** NEW ***
- * -----------------------------------------------------------------------
- * POST /api/vendors/:vendorId/session/consent - called by the WhatsApp
- * webhook layer once it has parsed a vendor's reply to a consent
- * opt-in/opt-out prompt. Same role-boundary pattern as
- * locationController: this file has no knowledge of WhatsApp payload
- * formats, it just receives already-parsed { whatsappId, consent }.
- *
- * GET /api/vendors/:vendorId/session - read-only session status check,
- * useful for the admin dashboard or for the messaging service to check
- * "has this vendor already consented" before sending a fresh prompt.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 import Vendor from '../models/Vendor.js';
-import { recordConsent, getSession } from '../services/vendorSessionService.js';
+import { recordConsent, withdrawConsent, getSession, CURRENT_NOTICE_VERSION } from '../services/vendorSessionService.js';
 import { logActivity } from '../services/activityLogService.js';
 
-/**
- * POST /api/vendors/:vendorId/session/consent
- * Body: { whatsappId: string, consent: boolean }
- */
 export async function updateConsent(req, res) {
   try {
     const { vendorId } = req.params;
-    const { whatsappId, consent } = req.body;
+    const { whatsappId, consent, noticeVersion } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(vendorId)) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
@@ -44,14 +25,13 @@ export async function updateConsent(req, res) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
-    const session = await recordConsent(vendorId, whatsappId, consent);
+    const session = await recordConsent(vendorId, whatsappId, consent, noticeVersion || CURRENT_NOTICE_VERSION);
 
-    // Fire-and-forget audit trail entry - never blocks the response.
     logActivity(
       vendorId,
       'Consent Recorded',
-      `Consent set to ${consent} via WhatsApp opt-in flow`
-    ).catch(() => {}); // logActivity already catches internally; belt-and-suspenders
+      `Consent set to ${consent} via WhatsApp opt-in flow (notice ${session.NoticeVersion})`
+    ).catch(() => {});
 
     return res.status(200).json({
       success: true,
@@ -61,6 +41,8 @@ export async function updateConsent(req, res) {
         SessionStatus: session.SessionStatus,
         Consent: session.Consent,
         ConsentTimestamp: session.ConsentTimestamp,
+        NoticeVersion: session.NoticeVersion,
+        ConsentWithdrawnAt: session.ConsentWithdrawnAt,
       },
     });
   } catch (err) {
@@ -69,9 +51,37 @@ export async function updateConsent(req, res) {
   }
 }
 
-/**
- * GET /api/vendors/:vendorId/session
- */
+export async function revokeConsent(req, res) {
+  try {
+    const { vendorId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(vendorId)) {
+      return res.status(400).json({ success: false, message: 'Invalid vendorId' });
+    }
+
+    const session = await withdrawConsent(vendorId);
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'No session found for this vendor' });
+    }
+
+    logActivity(vendorId, 'Consent Withdrawn', 'Vendor withdrew location-tracking consent').catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Consent withdrawn - location tracking stopped',
+      data: {
+        Vendor_ID: vendorId,
+        SessionStatus: session.SessionStatus,
+        ConsentWithdrawnAt: session.ConsentWithdrawnAt,
+      },
+    });
+  } catch (err) {
+    console.error('[vendorSessionController.revokeConsent]', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+}
+
 export async function getVendorSession(req, res) {
   try {
     const { vendorId } = req.params;

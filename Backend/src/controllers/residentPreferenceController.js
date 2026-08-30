@@ -1,34 +1,8 @@
-/**
- * controllers/residentPreferenceController.js  *** NEW ***
- * -----------------------------------------------------------------------
- * Manages a resident's preferred vendor categories - backs the
- * ResidentCategoryPreference join collection and the "Category and
- * Rating-based filtering" deliverable from slide 12.
- *
- * PUT (not POST) semantics are used for setting preferences: the
- * request body is the resident's COMPLETE desired preference set, and
- * this replaces whatever was there before. This matches how a
- * multi-select category picker in the React app would naturally work
- * (checkbox list -> submit the full selection) far better than
- * incremental add/remove-one-at-a-time calls would.
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 import Resident from '../models/Resident.js';
 import Category from '../models/Category.js';
 import ResidentCategoryPreference from '../models/ResidentCategoryPreference.js';
 
-/**
- * PUT /api/residents/:residentId/preferences
- * Body: { categoryIds: string[] }
- *
- * Replaces the resident's full set of preferred categories. Implemented
- * as delete-outside-the-set + upsert-inside-the-set rather than a
- * blind delete-all-then-insert-all, so a partial failure mid-request
- * can't leave a resident with zero preferences when they actually still
- * had some - the diff is computed first, then applied.
- */
 export async function setPreferences(req, res) {
   try {
     const { residentId } = req.params;
@@ -55,8 +29,6 @@ export async function setPreferences(req, res) {
       return res.status(404).json({ success: false, message: 'Resident not found' });
     }
 
-    // Confirm every requested category actually exists, in one query
-    // rather than one lookup per id.
     const foundCategories = await Category.find({ _id: { $in: categoryIds } })
       .select('_id')
       .lean();
@@ -69,13 +41,11 @@ export async function setPreferences(req, res) {
         .json({ success: false, message: `Category id(s) not found: ${missing.join(', ')}` });
     }
 
-    // Remove preferences no longer in the requested set.
     await ResidentCategoryPreference.deleteMany({
       Resident_ID: residentId,
       Category_ID: { $nin: categoryIds },
     });
 
-    // Upsert each requested preference - idempotent if it already exists.
     await Promise.all(
       categoryIds.map((categoryId) =>
         ResidentCategoryPreference.findOneAndUpdate(
@@ -97,9 +67,6 @@ export async function setPreferences(req, res) {
   }
 }
 
-/**
- * GET /api/residents/:residentId/preferences
- */
 export async function getPreferences(req, res) {
   try {
     const { residentId } = req.params;

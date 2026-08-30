@@ -1,13 +1,3 @@
-/**
- * models/Alert.js
- * -----------------------------------------------------------------------
- * Audit/throttle log of every proactive push sent to a resident.
- * services/proximityWorker.js writes to this via services/alertService.js
- * BEFORE firing an FCM push, so the throttle check always has an
- * accurate view of "was this pair already notified recently".
- * -----------------------------------------------------------------------
- */
-
 import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
@@ -41,7 +31,7 @@ const AlertSchema = new Schema(
     },
 
     DistanceAtAlert: {
-      type: Number, // kilometers
+      type: Number,
       required: [true, 'DistanceAtAlert is required'],
       min: 0,
     },
@@ -49,7 +39,6 @@ const AlertSchema = new Schema(
   { timestamps: false }
 );
 
-// Compound index - this is exactly what the throttle check queries on.
 AlertSchema.index({ Vendor_ID: 1, Resident_ID: 1, Timestamp: -1 });
 
 AlertSchema.virtual('Alert_ID').get(function () {

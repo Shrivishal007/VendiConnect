@@ -1,11 +1,3 @@
-/**
- * controllers/adminController.js  *** NEW THIS WEEK ***
- * -----------------------------------------------------------------------
- * POST /api/admin/login          - bcrypt + JWT authentication
- * GET  /api/admin/dashboard      - protected, returns basic system analytics
- * -----------------------------------------------------------------------
- */
-
 import jwt from 'jsonwebtoken';
 import AdminUser from '../models/AdminUser.js';
 import Vendor from '../models/Vendor.js';
@@ -14,14 +6,6 @@ import Alert from '../models/Alert.js';
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 
-/**
- * POST /api/admin/login
- * Body: { email, password }
- *
- * Generic "Invalid credentials" message is used for BOTH "no such
- * email" and "wrong password" cases, deliberately - distinguishing them
- * in the response would let an attacker enumerate valid admin emails.
- */
 export async function login(req, res) {
   try {
     const { email, password } = req.body;
@@ -30,7 +14,6 @@ export async function login(req, res) {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
 
-    // PasswordHash has `select: false` on the schema - opt in explicitly.
     const admin = await AdminUser.findOne({ Email: email.toLowerCase().trim() }).select(
       '+PasswordHash'
     );
@@ -74,16 +57,6 @@ export async function login(req, res) {
   }
 }
 
-/**
- * GET /api/admin/dashboard
- * Protected by middleware/authMiddleware.requireAdminAuth.
- *
- * Returns a snapshot of basic system analytics: active vendor count,
- * total registered residents, and the most recent alerts fired.
- * Deliberately kept to cheap countDocuments()/find().limit() calls
- * rather than heavier aggregations, since this is likely to be polled
- * frequently by the dashboard UI.
- */
 export async function getDashboard(req, res) {
   try {
     const [totalActiveVendors, totalResidents, recentAlerts] = await Promise.all([

@@ -1,0 +1,13 @@
+{
+  "name": "vendiconnect-hardcoded",
+  "version": "1.0.0",
+  "description": "Hardcoded WhatsApp Bot for VendiConnect",
+  "main": "whatsapp-client.js",
+  "scripts": {
+    "start": "node whatsapp-client.js"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.23.0"
+  }
+}

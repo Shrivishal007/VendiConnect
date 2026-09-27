@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Alert when vendor is near resident
 const AlertSchema = new mongoose.Schema(
   {
     Vendor_ID: {
@@ -20,6 +21,7 @@ const AlertSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
       required: true,
+      index: true,
     },
 
     EtaMinutes: {
@@ -37,6 +39,8 @@ const AlertSchema = new mongoose.Schema(
   { timestamps: false }
 );
 
+// Compound indexes for common query patterns
 AlertSchema.index({ Vendor_ID: 1, Resident_ID: 1, Timestamp: -1 });
+AlertSchema.index({ Resident_ID: 1, Timestamp: -1 });
 
 export default mongoose.model('Alert', AlertSchema);

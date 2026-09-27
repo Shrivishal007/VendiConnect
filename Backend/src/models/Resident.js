@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Resident user model with location and notification settings
 const residentSchema = new mongoose.Schema(
   {
     Name: {
@@ -48,5 +49,8 @@ const residentSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Compound index for residents with location set
+residentSchema.index({ Latitude: 1, Longitude: 1 });
 
 export default mongoose.model('Resident', residentSchema);

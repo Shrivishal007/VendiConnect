@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Resident category preferences
 const preferencesSchema = new mongoose.Schema(
   {
     Resident_ID: {

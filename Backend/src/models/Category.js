@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Vendor category model
 const categoriesSchema = new mongoose.Schema({
   Name: {
     type: String,

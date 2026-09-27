@@ -2,6 +2,7 @@ import cors from 'cors';
 
 const defaultOrigins = ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8081'];
 
+// Parse allowed origins from env or use defaults
 function parseAllowedOrigins() {
   const input = process.env.ALLOWED_ORIGINS;
   if (!input) {
@@ -16,6 +17,7 @@ function parseAllowedOrigins() {
 
 const allowedOrigins = parseAllowedOrigins();
 
+// CORS middleware with origin whitelist
 const corsMiddleware = cors({
   origin(origin, callback) {
     if (!origin) {

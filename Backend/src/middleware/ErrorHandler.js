@@ -1,13 +1,16 @@
+// Wrapper for async route handlers to catch errors
 export function asyncHandler(fn) {
   return function wrapped(req, res, next) {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 }
 
+// Handle 404 - route not found
 export function notFoundHandler(req, res) {
   res.status(404).json({ success: false, message: `Route not found ${req.method} ${req.originalUrl}` });
 }
 
+// Global error handler with specific error type handling
 export function errorHandler(err, req, res, next) {
   console.error(`[ERROR] ${req.method} ${req.originalUrl}: ${err}`);
 

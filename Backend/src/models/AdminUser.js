@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 
 const SALT_ROUNDS = 12;
 
+// Admin user model with password hashing
 const adminUserSchema = new mongoose.Schema(
   {
     Email: {

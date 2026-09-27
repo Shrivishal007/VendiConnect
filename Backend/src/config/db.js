@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Connect to MongoDB with connection monitoring
 const connectDB = async () => {
   try {
     const uri = process.env.MONGO_URI;
@@ -11,6 +12,7 @@ const connectDB = async () => {
 
     console.log(`[DB] MongoDB connected: ${mongoose.connection.host}`);
 
+    // Monitor connection events
     mongoose.connection.on('disconnected', () => {
       console.warn('[DB] MongoDB disconnected');
     });

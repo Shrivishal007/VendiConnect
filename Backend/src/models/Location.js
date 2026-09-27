@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 const locationTTLMinutes = parseInt(process.env.LOCATION_TTL_MINUTES, 10) || 30;
 
+// Vendor location with geo-spatial indexing and TTL
 const locationSchema = new mongoose.Schema(
   {
     Vendor_ID: {

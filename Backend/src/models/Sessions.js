@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Vendor session tracking with consent management
 const SessionsSchema = new mongoose.Schema(
   {
     Vendor_ID: {
@@ -31,6 +32,7 @@ const SessionsSchema = new mongoose.Schema(
     Consent: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     ConsentTimestamp: {
@@ -45,5 +47,8 @@ const SessionsSchema = new mongoose.Schema(
   },
   { timestamps: false }
 );
+
+// Compound index for active sessions with consent
+SessionsSchema.index({ Status: 1, Consent: 1 });
 
 export default mongoose.model('Sessions', SessionsSchema);

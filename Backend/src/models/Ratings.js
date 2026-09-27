@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Resident ratings for vendors
 const ratingsSchema = new mongoose.Schema(
   {
     Resident_ID: {
@@ -26,6 +27,7 @@ const ratingsSchema = new mongoose.Schema(
     RatingDate: {
       type: Date,
       default: Date.now,
+      index: true,
     },
 
     Review: {
@@ -38,6 +40,8 @@ const ratingsSchema = new mongoose.Schema(
   { timestamps: false }
 );
 
+// Compound indexes for common query patterns
 ratingsSchema.index({ Resident_ID: 1, Vendor_ID: 1 }, { unique: true });
+ratingsSchema.index({ Vendor_ID: 1, RatingDate: -1 });
 
 export default mongoose.model('Ratings', ratingsSchema);

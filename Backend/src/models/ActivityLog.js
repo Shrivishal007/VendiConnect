@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Activity log for vendor events
 const ActivityLogsSchema = new mongoose.Schema(
   {
     Vendor_ID: {

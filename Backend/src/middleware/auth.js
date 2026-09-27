@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import AdminUser from '../models/AdminUser.js';
 
+// Verify JWT token and attach admin user to request
 export async function requireAdminAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -42,6 +43,7 @@ export async function requireAdminAuth(req, res, next) {
   }
 }
 
+// Role-based access control middleware
 export function requireRole(...allowedRoles) {
   return (req, res, next) => {
     if (!req.admin) {

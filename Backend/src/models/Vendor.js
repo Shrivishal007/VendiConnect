@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+// Vendor model with ratings and status
 const vendorSchema = new mongoose.Schema(
   {
     Name: {
@@ -51,5 +52,9 @@ const vendorSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Compound indexes for common query patterns
+vendorSchema.index({ Status: 1, Category_ID: 1 });
+vendorSchema.index({ Status: 1, AvgRating: -1 });
 
 export default mongoose.model('Vendor', vendorSchema);

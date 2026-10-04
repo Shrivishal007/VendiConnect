@@ -19,7 +19,7 @@ router.post('/register', adminLoginRateLimiter, requireAdminAuth, requireRole('S
 
 // Dashboard & reports
 router.get('/dashboard', requireAdminAuth, getDashboard);
-router.get('pilot-report', requireAdminAuth, getPilotReport);
+router.get('/pilot-report', requireAdminAuth, getPilotReport);
 
 // Vendor management
 router.get('/vendors', requireAdminAuth, listVendors);
@@ -41,4 +41,4 @@ router.get('/ratings', requireAdminAuth, listRatings);
 router.get('/alerts', requireAdminAuth, listAlerts);
 router.get('/activity', requireAdminAuth, listActivity);
 
-export default router;
+export default router;

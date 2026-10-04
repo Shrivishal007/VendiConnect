@@ -32,7 +32,7 @@ function signAdminToken(admin) {
 // Register a new admin user
 export async function register(req, res) {
   try {
-    const { email, password, role } = req.body;
+    const { email, password, role } = req.body || {};
     const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
 
     if (!isValidEmail(normalizedEmail) || typeof password !== 'string' || password.length < 8) {
@@ -74,7 +74,7 @@ export async function register(req, res) {
 // Admin login with JWT token
 export async function login(req, res) {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     if (!isValidEmail(email?.trim()) || typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
@@ -133,7 +133,7 @@ export async function getDashboard(req, res) {
       vendorName: alert.Vendor_ID?.Name || 'Unknown vendor',
       residentName: alert.Resident_ID?.Name || 'Unknown resident',
       etaMinutes: alert.EtaMinutes,
-      distanceAtAlertKm: alert.DistanceAt,
+      distanceAtKm: alert.DistanceAt,
       timestamp: alert.Timestamp,
     }));
 
@@ -155,7 +155,7 @@ export async function getDashboard(req, res) {
 // Get current admin profile
 export async function getMe(req, res) {
   try {
-    // req.admin is the decoded JWT payload set by authMiddleware.requireAdminAuth
+    // req.admin is built from the database record by requireAdminAuth
     const admin = await AdminUser.findById(req.admin.adminId).select('Email Role createdAt').lean();
 
     if (!admin) {

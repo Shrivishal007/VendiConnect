@@ -26,4 +26,4 @@ router.get('/:vendorId/session', getVendorSession);
 // Activity logs
 router.get('/:vendorId/activity', getVendorActivity);
 
-export default router;
+export default router;

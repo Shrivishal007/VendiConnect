@@ -1,31 +1,20 @@
-/**
- * @file ratingController.js
- * @description Controller for vendor rating operations.
- * Handles creation of ratings with proximity validation and average rating recalculation.
- * @module controllers/ratingController
- */
-
 import mongoose from 'mongoose';
 import Ratings from '../models/Ratings.js';
 import Vendor from '../models/Vendor.js';
 import Alert from '../models/Alert.js';
+import { recalculateAvgRating } from '../services/ratingService.js';
 
 const RATING_PROXIMITY_WINDOW_HOURS = parseInt(process.env.RATING_PROXIMITY_WINDOW_HOURS, 10) || 2;
 
 export async function createRating(req, res) {
   try {
-    const { vendorId, ratingValue, review, residentId } = req.body;
+    const { vendorId, ratingValue, review } = req.body || {};
+    const residentId = req.resident._id;
 
     if (!mongoose.Types.ObjectId.isValid(vendorId)) {
       return res
         .status(400)
         .json({ success: false, message: 'Valid vendorId is required' });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(residentId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Valid residentId is required' });
     }
 
     if (typeof ratingValue !== 'number' || ratingValue < 1 || ratingValue > 5) {
@@ -65,23 +54,15 @@ export async function createRating(req, res) {
       { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true, runValidators: true }
     );
 
-    const allRatings = await Ratings.find({ Vendor_ID: vendorId });
-    const avgRating = allRatings.length > 0 
-      ? allRatings.reduce((sum, r) => sum + r.Rating, 0) / allRatings.length 
-      : 0;
-    
-    await Vendor.findByIdAndUpdate(vendorId, { 
-      AvgRating: Math.round(avgRating * 10) / 10, 
-      RatingCount: allRatings.length 
-    });
+    const { avgRating, ratingCount } = await recalculateAvgRating(vendorId);
 
     return res.status(201).json({
       success: true,
       message: 'Rating recorded',
       data: {
         rating,
-        vendorAvgRating: Math.round(avgRating * 10) / 10,
-        vendorRatingCount: allRatings.length,
+        vendorAvgRating: avgRating,
+        vendorRatingCount: ratingCount,
       },
     });
   } catch (err) {

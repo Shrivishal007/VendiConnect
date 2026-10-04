@@ -1,5 +1,32 @@
 # Weekly Work Log
 
+**Week of:** September 27, 2026 - October 4, 2026
+
+**Author:** Shrivishal C R
+
+## Summary
+
+Overall Status: Services Layer, Health Monitoring and Resident Firebase Authentication Complete
+
+**Works Done:**
+
+- Implemented the services layer, SLA targets configuration and a health check route with database ping and memory monitoring
+- Implemented Firebase resident authentication (token verification, resident attach and own-account middleware, sync, profile and FCM-token controllers) mounted under /api/residents
+- Audited the backend and fixed startup-blocking defects
+
+**Future Works:** Integration testing against live Firebase and MongoDB, request validation schemas, vendor endpoint authentication, API documentation
+
+## References
+
+https://firebase.google.com/docs/cloud-messaging/server-environment
+https://firebase.google.com/docs/auth/admin/verify-id-tokens 
+https://firebase.google.com/docs/phone-number-verification
+https://firebase.google.com/docs/cloud-messaging/send-message
+
+Last Updated: October 4, 2026
+
+---
+
 **Week of:** September 20, 2026 - September 27, 2026
 
 **Author:** Shrivishal C R

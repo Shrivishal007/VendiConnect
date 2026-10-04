@@ -11,7 +11,8 @@ export async function listResidents(req, res) {
 
     const match = {};
     if (q) {
-      match.Name = { $regex: String(q).trim(), $options: 'i' };
+      const escaped = String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      match.Name = { $regex: escaped, $options: 'i' };
     }
 
     const [residents, total] = await Promise.all([

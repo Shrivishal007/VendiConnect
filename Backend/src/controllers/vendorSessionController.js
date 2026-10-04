@@ -1,11 +1,13 @@
 import mongoose from 'mongoose';
 import Vendor from '../models/Vendor.js';
+import Sessions from '../models/Sessions.js';
+import { hashPhoneNumber } from '../utils/privacy.js';
 
 // Update vendor consent status
 export async function updateConsent(req, res) {
   try {
     const { vendorId } = req.params;
-    const { whatsappId, consent } = req.body;
+    const { whatsappId, consent } = req.body || {};
 
     if (!mongoose.Types.ObjectId.isValid(vendorId)) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
@@ -24,12 +26,11 @@ export async function updateConsent(req, res) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
-    const Sessions = (await import('../models/Sessions.js')).default;
     const session = await Sessions.findOneAndUpdate(
       { Vendor_ID: vendorId },
       {
         Vendor_ID: vendorId,
-        Phone: whatsappId,
+        Phone: hashPhoneNumber(whatsappId),
         Consent: consent,
         Status: consent ? 'ACTIVE' : 'INACTIVE',
         ConsentTimestamp: consent ? new Date() : null,
@@ -65,7 +66,6 @@ export async function revokeConsent(req, res) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
     }
 
-    const Sessions = (await import('../models/Sessions.js')).default;
     const session = await Sessions.findOneAndUpdate(
       { Vendor_ID: vendorId },
       {
@@ -104,7 +104,6 @@ export async function getVendorSession(req, res) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
     }
 
-    const Sessions = (await import('../models/Sessions.js')).default;
     const session = await Sessions.findOne({ Vendor_ID: vendorId }).lean();
 
     if (!session) {

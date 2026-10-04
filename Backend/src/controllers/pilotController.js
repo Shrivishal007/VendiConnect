@@ -1,3 +1,5 @@
+import { generatePilotReport } from '../services/pilotAnalytics.js';
+
 // Generate pilot report with optional time window
 export async function getPilotReport(req, res) {
   try {

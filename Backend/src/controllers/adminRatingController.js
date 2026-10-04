@@ -31,7 +31,7 @@ export async function listRatings(req, res) {
       VendorName: rating.Vendor_ID?.Name || 'Unknown vendor',
       Vendor_ID: rating.Vendor_ID?._id || null,
       Resident_ID: rating.Resident_ID,
-      RatingValue: rating.Rating,
+      Rating: rating.Rating,
       Review: rating.Review,
       RatingDate: rating.RatingDate,
     }));

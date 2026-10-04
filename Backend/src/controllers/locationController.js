@@ -1,14 +1,8 @@
-/**
- * @file locationController.js
- * @description Controller for vendor location operations.
- * Handles ingestion and processing of vendor location data with privacy protection and consent verification.
- * @module controllers/locationController
- */
-
 import mongoose from 'mongoose';
 import Location from '../models/Location.js';
 import Vendor from '../models/Vendor.js';
 import { toApproximateGeoPoint } from '../utils/privacy.js';
+import { matchAndNotifyResidents } from '../services/proximityWorker.js';
 
 const LOCATION_TTL_MINUTES = parseInt(process.env.LOCATION_TTL_MINUTES, 10) || 30;
 
@@ -53,7 +47,7 @@ export async function ingestVendorLocation(vendorId, latitude, longitude) {
     { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
   );
 
-  await Vendor.updateOne({ _id: vendorId }, { $set: { Status: 'ACTIVE' } });
+  await Vendor.updateOne({ _id: vendorId, Status: { $ne: 'SUSPENDED' } }, { $set: { Status: 'ACTIVE' } });
 
   const elapsedMs = Date.now() - startedAt;
   if (elapsedMs > WEBHOOK_LATENCY_TARGET_MS) {
@@ -68,9 +62,13 @@ export async function ingestVendorLocation(vendorId, latitude, longitude) {
 export async function updateVendorLocation(req, res) {
   try {
     const { vendorId } = req.params;
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude } = req.body || {};
 
     const updatedLocation = await ingestVendorLocation(vendorId, latitude, longitude);
+
+    matchAndNotifyResidents(vendorId, updatedLocation.geo).catch((err) =>
+      console.error('[locationController] proximity pass failed:', err.message)
+    );
 
     return res.status(200).json({
       success: true,

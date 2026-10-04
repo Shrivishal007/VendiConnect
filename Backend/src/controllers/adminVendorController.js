@@ -100,7 +100,7 @@ export async function getVendorDetail(req, res) {
 export async function updateVendorStatus(req, res) {
   try {
     const { vendorId } = req.params;
-    const { status } = req.body;
+    const { status } = req.body || {};
 
     if (!mongoose.Types.ObjectId.isValid(vendorId)) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });

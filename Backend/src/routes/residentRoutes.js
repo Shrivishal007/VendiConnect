@@ -1,25 +1,18 @@
 import express from 'express';
+import { requireResidentAuth, attachResident, requireOwnResident } from '../middleware/auth.js';
+import { syncResident, getMyResidentProfile, updateMyResidentProfile, updateMyFcmToken } from '../controllers/residentAuthController.js';
 import { setPreferences, getPreferences } from '../controllers/preferenceController.js';
 
 const router = express.Router();
 
-// Note: requireResidentAuth, attachResident, requireOwnResident middleware need to be implemented
-// Note: syncResident, getMyResidentProfile, updateMyResidentProfile, updateMyFcmToken controllers need to be implemented
+// Auth routes
+router.post('/auth/sync', requireResidentAuth, syncResident);
+router.get('/auth/me', requireResidentAuth, getMyResidentProfile);
+router.patch('/auth/me', requireResidentAuth, updateMyResidentProfile);
+router.patch('/auth/fcm-token', requireResidentAuth, updateMyFcmToken);
 
-router.post('/auth/sync', (req, res) => {
-  res.status(501).json({ success: false, message: 'Resident sync requires controller implementation' });
-});
-router.get('/auth/me', (req, res) => {
-  res.status(501).json({ success: false, message: 'Resident profile requires controller implementation' });
-});
-router.patch('/auth/me', (req, res) => {
-  res.status(501).json({ success: false, message: 'Resident profile update requires controller implementation' });
-});
-router.patch('/auth/fcm-token', (req, res) => {
-  res.status(501).json({ success: false, message: 'FCM token update requires controller implementation' });
-});
+// Preferences
+router.put('/:residentId/preferences', requireResidentAuth, attachResident, requireOwnResident, setPreferences);
+router.get('/:residentId/preferences', requireResidentAuth, attachResident, requireOwnResident, getPreferences);
 
-router.put('/:residentId/preferences', setPreferences);
-router.get('/:residentId/preferences', getPreferences);
-
-export default router;
+export default router;

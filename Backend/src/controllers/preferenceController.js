@@ -7,7 +7,7 @@ import Preferences from '../models/Preferences.js';
 export async function setPreferences(req, res) {
   try {
     const { residentId } = req.params;
-    const { categoryIds } = req.body;
+    const { categoryIds } = req.body || {};
 
     if (!mongoose.Types.ObjectId.isValid(residentId)) {
       return res.status(400).json({ success: false, message: 'Invalid residentId' });

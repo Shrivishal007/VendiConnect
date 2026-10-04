@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { generateVendorAnalytics, generateWeeklyVendorSummary } from '../services/analyticsService.js';
 
 // Get weekly analytics for a vendor
 export async function getWeeklyVendorAnalytics(req, res) {

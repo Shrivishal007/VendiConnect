@@ -42,9 +42,19 @@ const residentSchema = new mongoose.Schema(
 
     NotificationRadius: {
       type: Number,
-      min: 500,
+      min: 50,
       max: 5000,
       default: 500,
+    },
+
+    Address: {
+      type: String,
+      default: '',
+    },
+
+    FcmToken: {
+      type: String,
+      default: null,
     },
   },
   { timestamps: true }

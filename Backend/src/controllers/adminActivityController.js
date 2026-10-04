@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { getActivityFeed } from '../services/activityLogService.js';
 import { parsePagination, buildPageMeta } from '../utils/paginate.js';
 
 // List activity logs for admin with pagination

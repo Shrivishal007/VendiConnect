@@ -24,7 +24,7 @@ export async function listCategoriesWithCounts(req, res) {
 // Create a new category
 export async function createCategory(req, res) {
   try {
-    const { name, iconKey } = req.body;
+    const { name, iconKey } = req.body || {};
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ success: false, message: 'name is required' });
@@ -45,7 +45,7 @@ export async function createCategory(req, res) {
 export async function updateCategory(req, res) {
   try {
     const { categoryId } = req.params;
-    const { name, iconKey } = req.body;
+    const { name, iconKey } = req.body || {};
 
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({ success: false, message: 'Invalid categoryId' });

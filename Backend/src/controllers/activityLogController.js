@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { getRecentActivity } from '../services/activityLogService.js';
 
 // Get recent activity logs for a vendor
 export async function getVendorActivity(req, res) {

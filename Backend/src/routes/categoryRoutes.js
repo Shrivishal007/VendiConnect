@@ -6,4 +6,4 @@ const router = express.Router();
 // Get all categories (public endpoint)
 router.get('/categories', getCategories);
 
-export default router;
+export default router;

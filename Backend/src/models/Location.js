@@ -52,6 +52,6 @@ const locationSchema = new mongoose.Schema(
 );
 
 locationSchema.index({ geo: '2dsphere' });
-locationSchema.index({ ExpiresAt: 1, expireAfterSeconds: 0 });
+locationSchema.index({ ExpiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model('Location', locationSchema);

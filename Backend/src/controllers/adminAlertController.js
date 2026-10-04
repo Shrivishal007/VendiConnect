@@ -38,7 +38,7 @@ export async function listAlerts(req, res) {
       VendorName: alert.Vendor_ID?.Name || 'Unknown vendor',
       ResidentName: alert.Resident_ID?.Name || 'Unknown resident',
       EtaMinutes: alert.EtaMinutes,
-      DistanceAtAlert: alert.DistanceAt,
+      DistanceAt: alert.DistanceAt,
       Timestamp: alert.Timestamp,
     }));
 

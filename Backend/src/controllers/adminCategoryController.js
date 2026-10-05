@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Category from '../models/Category.js';
 import Vendor from '../models/Vendor.js';
 
+const TEXT_MAX_LENGTH = 100;
+
 // List categories with vendor counts
 export async function listCategoriesWithCounts(req, res) {
   try {
@@ -29,8 +31,17 @@ export async function createCategory(req, res) {
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ success: false, message: 'name is required' });
     }
+    if (name.trim().length > TEXT_MAX_LENGTH) {
+      return res.status(400).json({ success: false, message: `name must be at most ${TEXT_MAX_LENGTH} characters` });
+    }
+    if (iconKey !== undefined && typeof iconKey !== 'string') {
+      return res.status(400).json({ success: false, message: 'iconKey must be a string' });
+    }
+    if (iconKey && iconKey.trim().length > TEXT_MAX_LENGTH) {
+      return res.status(400).json({ success: false, message: `iconKey must be at most ${TEXT_MAX_LENGTH} characters` });
+    }
 
-    const category = await Category.create({ Name: name.trim(), Icon: iconKey?.trim() || '' });
+    const category = await Category.create({ Name: name.trim(), Icon: iconKey ? iconKey.trim() : '' });
     return res.status(201).json({ success: true, data: category });
   } catch (err) {
     if (err.code === 11000) {
@@ -53,13 +64,26 @@ export async function updateCategory(req, res) {
 
     const update = {};
     if (name !== undefined) {
-      if (!name.trim()) {
-        return res.status(400).json({ success: false, message: 'name cannot be empty' });
+      if (typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ success: false, message: 'name must be a non-empty string' });
+      }
+      if (name.trim().length > TEXT_MAX_LENGTH) {
+        return res.status(400).json({ success: false, message: `name must be at most ${TEXT_MAX_LENGTH} characters` });
       }
       update.Name = name.trim();
     }
     if (iconKey !== undefined) {
+      if (typeof iconKey !== 'string') {
+        return res.status(400).json({ success: false, message: 'iconKey must be a string' });
+      }
+      if (iconKey.trim().length > TEXT_MAX_LENGTH) {
+        return res.status(400).json({ success: false, message: `iconKey must be at most ${TEXT_MAX_LENGTH} characters` });
+      }
       update.Icon = iconKey.trim();
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ success: false, message: 'No updatable fields provided' });
     }
 
     const category = await Category.findByIdAndUpdate(categoryId, { $set: update }, { returnDocument: 'after', runValidators: true });

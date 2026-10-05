@@ -19,7 +19,7 @@ const SessionsSchema = new mongoose.Schema(
 
     Status: {
       type: String,
-      enum: ['PENDING_CONSENT', 'ACTIVE', 'INACTIVE', 'REVOKED'],
+      enum: ['PENDING_CONSENT', 'ACTIVE', 'REVOKED'],
       default: 'PENDING_CONSENT',
       index: true,
     },

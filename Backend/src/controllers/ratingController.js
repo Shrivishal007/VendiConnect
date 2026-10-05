@@ -4,6 +4,7 @@ import Vendor from '../models/Vendor.js';
 import Alert from '../models/Alert.js';
 import { recalculateAvgRating } from '../services/ratingService.js';
 
+const MAX_REVIEW_LENGTH = 500;
 const RATING_PROXIMITY_WINDOW_HOURS = parseInt(process.env.RATING_PROXIMITY_WINDOW_HOURS, 10) || 2;
 
 export async function createRating(req, res) {
@@ -21,6 +22,15 @@ export async function createRating(req, res) {
       return res
         .status(400)
         .json({ success: false, message: 'ratingValue must be a number between 1 and 5' });
+    }
+
+    if (review !== undefined && review !== null) {
+      if (typeof review !== 'string') {
+        return res.status(400).json({ success: false, message: 'review must be a string' });
+      }
+      if (review.trim().length > MAX_REVIEW_LENGTH) {
+        return res.status(400).json({ success: false, message: `review must be at most ${MAX_REVIEW_LENGTH} characters` });
+      }
     }
 
     const vendorExists = await Vendor.exists({ _id: vendorId });

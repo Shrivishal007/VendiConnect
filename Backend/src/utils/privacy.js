@@ -57,15 +57,3 @@ export function normalizePhoneNumber(phone) {
   const digitsOnly = trimmed.replace(/\D/g, '');
   return hasPlus ? `+${digitsOnly}` : digitsOnly;
 }
-
-// Mask phone number for display
-export function maskPhoneNumber(rawPhoneNumber) {
-  const normalized = normalizePhoneNumber(rawPhoneNumber);
-  if (normalized.length <= 4) return '*'.repeat(normalized.length);
-
-  const visibleStart = normalized.slice(0, 4);
-  const visibleEnd = normalized.slice(-2);
-  const maskedMiddle = '*'.repeat(Math.max(normalized.length - 6, 0));
-
-  return `${visibleStart}${maskedMiddle}${visibleEnd}`;
-}

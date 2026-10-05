@@ -94,7 +94,7 @@ export async function requireResidentAuth(req, res, next) {
   }
 }
 
-
+// Attach resident document to request from Firebase UID
 export async function attachResident(req, res, next) {
   try {
     const resident = await Resident.findOne({ FirebaseUID: req.residentFirebaseUid });
@@ -111,6 +111,7 @@ export async function attachResident(req, res, next) {
   }
 }
 
+// Ensure resident can only act on their own account
 export function requireOwnResident(req, res, next) {
   const { residentId } = req.params;
 

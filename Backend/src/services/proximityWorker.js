@@ -6,6 +6,31 @@ import { sendPushNotification } from './fcmService.js';
 
 const RESIDENT_BATCH_SIZE = 200;
 
+// Largest NotificationRadius a resident can store (see Resident model); used to bound the candidate search
+const MAX_NOTIFICATION_RADIUS_METERS = 5000;
+const METERS_PER_DEGREE_LAT = 111320;
+
+// Bounding box around the vendor so only nearby residents are loaded instead of every resident
+function buildCandidateFilter(vendorLat, vendorLng) {
+  const latDelta = MAX_NOTIFICATION_RADIUS_METERS / METERS_PER_DEGREE_LAT;
+  const cosLat = Math.max(Math.cos((vendorLat * Math.PI) / 180), 0.01);
+  const lngDelta = MAX_NOTIFICATION_RADIUS_METERS / (METERS_PER_DEGREE_LAT * cosLat);
+
+  const filter = {
+    Latitude: { $gte: vendorLat - latDelta, $lte: vendorLat + latDelta },
+  };
+
+  // Near the poles or the antimeridian the longitude box is unreliable, so fall back to latitude only
+  if (lngDelta < 90 && Math.abs(vendorLng) + lngDelta < 180) {
+    filter.Longitude = { $gte: vendorLng - lngDelta, $lte: vendorLng + lngDelta };
+  } else {
+    filter.Longitude = { $ne: null };
+  }
+
+  return filter;
+}
+
+// Match vendor to nearby residents and send push notifications
 export async function matchAndNotifyResidents(vendorId, vendorGeoPoint) {
   const summary = { matched: 0, notified: 0, throttled: 0, failed: 0 };
 
@@ -15,18 +40,22 @@ export async function matchAndNotifyResidents(vendorId, vendorGeoPoint) {
       console.warn(`[proximityWorker] Vendor ${vendorId} not found - skipping match pass`);
       return summary;
     }
+    if (vendor.Status === 'SUSPENDED') {
+      console.warn(`[proximityWorker] Vendor ${vendorId} is suspended - skipping match pass`);
+      return summary;
+    }
 
     const [vendorLng, vendorLat] = vendorGeoPoint.coordinates;
+    const candidateFilter = buildCandidateFilter(vendorLat, vendorLng);
 
-    let skip = 0;
+    // Keyset pagination on _id: stable even if residents are added or removed mid-pass
+    let lastId = null;
     while (true) {
-      const residentBatch = await Resident.find({
-        Latitude: { $ne: null },
-        Longitude: { $ne: null },
-      })
+      const filter = lastId ? { ...candidateFilter, _id: { $gt: lastId } } : candidateFilter;
+
+      const residentBatch = await Resident.find(filter)
         .select('Latitude Longitude NotificationRadius FcmToken')
         .sort({ _id: 1 })
-        .skip(skip)
         .limit(RESIDENT_BATCH_SIZE)
         .lean();
 
@@ -38,7 +67,7 @@ export async function matchAndNotifyResidents(vendorId, vendorGeoPoint) {
         )
       );
 
-      skip += RESIDENT_BATCH_SIZE;
+      lastId = residentBatch[residentBatch.length - 1]._id;
     }
   } catch (err) {
     console.error('[proximityWorker.matchAndNotifyResidents] Unexpected error:', err);
@@ -47,6 +76,7 @@ export async function matchAndNotifyResidents(vendorId, vendorGeoPoint) {
   return summary;
 }
 
+// Process individual resident match for proximity and alert
 async function processResidentMatch(resident, vendor, vendorLat, vendorLng, summary) {
   try {
     const { distanceKm, etaMinutes } = getDistanceAndEta(

@@ -1,8 +1,10 @@
 import { getMessaging } from '../config/firebaseAdmin.js';
 import { retryWithBackoff, CircuitBreaker } from '../utils/retryWithBackoff.js';
 
+// Circuit breaker for FCM to prevent cascading failures
 const fcmCircuitBreaker = new CircuitBreaker({ failureThreshold: 5, cooldownMs: 30_000, label: 'fcm' });
 
+// Send push notification via Firebase Cloud Messaging with retry and circuit breaker
 export async function sendPushNotification(token, title, body, data = {}) {
   const messaging = getMessaging();
 

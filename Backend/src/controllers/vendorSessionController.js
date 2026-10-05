@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import Vendor from '../models/Vendor.js';
-import Sessions from '../models/Sessions.js';
-import { hashPhoneNumber } from '../utils/privacy.js';
+import { normalizePhoneNumber } from '../utils/privacy.js';
+import { recordConsent, withdrawConsent, getSession } from '../services/vendorSessionService.js';
 
 // Update vendor consent status
 export async function updateConsent(req, res) {
@@ -17,6 +17,11 @@ export async function updateConsent(req, res) {
       return res.status(400).json({ success: false, message: 'whatsappId is required' });
     }
 
+    const digitCount = normalizePhoneNumber(whatsappId).replace(/\D/g, '').length;
+    if (digitCount < 7 || digitCount > 15) {
+      return res.status(400).json({ success: false, message: 'whatsappId must be a valid phone number' });
+    }
+
     if (typeof consent !== 'boolean') {
       return res.status(400).json({ success: false, message: 'consent must be true or false' });
     }
@@ -26,19 +31,7 @@ export async function updateConsent(req, res) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
-    const session = await Sessions.findOneAndUpdate(
-      { Vendor_ID: vendorId },
-      {
-        Vendor_ID: vendorId,
-        Phone: hashPhoneNumber(whatsappId),
-        Consent: consent,
-        Status: consent ? 'ACTIVE' : 'INACTIVE',
-        ConsentTimestamp: consent ? new Date() : null,
-        ConsentWithdrawnAt: consent ? null : new Date(),
-        LastActive: new Date(),
-      },
-      { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
-    );
+    const session = await recordConsent(vendorId, whatsappId, consent);
 
     return res.status(200).json({
       success: true,
@@ -66,15 +59,7 @@ export async function revokeConsent(req, res) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
     }
 
-    const session = await Sessions.findOneAndUpdate(
-      { Vendor_ID: vendorId },
-      {
-        Consent: false,
-        Status: 'REVOKED',
-        ConsentWithdrawnAt: new Date(),
-      },
-      { returnDocument: 'after' }
-    );
+    const session = await withdrawConsent(vendorId);
 
     if (!session) {
       return res.status(404).json({ success: false, message: 'No session found for this vendor' });
@@ -95,7 +80,7 @@ export async function revokeConsent(req, res) {
   }
 }
 
-// Get vendor session details
+// Get vendor session details (admin only; the stored phone hash is never returned)
 export async function getVendorSession(req, res) {
   try {
     const { vendorId } = req.params;
@@ -104,7 +89,7 @@ export async function getVendorSession(req, res) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
     }
 
-    const session = await Sessions.findOne({ Vendor_ID: vendorId }).lean();
+    const session = await getSession(vendorId);
 
     if (!session) {
       return res.status(404).json({
@@ -113,7 +98,17 @@ export async function getVendorSession(req, res) {
       });
     }
 
-    return res.status(200).json({ success: true, data: session });
+    return res.status(200).json({
+      success: true,
+      data: {
+        Vendor_ID: session.Vendor_ID,
+        Status: session.Status,
+        Consent: session.Consent,
+        ConsentTimestamp: session.ConsentTimestamp,
+        ConsentWithdrawnAt: session.ConsentWithdrawnAt,
+        LastActive: session.LastActive,
+      },
+    });
   } catch (err) {
     console.error('[vendorSessionController.getVendorSession]', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });

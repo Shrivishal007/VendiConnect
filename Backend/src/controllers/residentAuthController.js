@@ -1,5 +1,21 @@
 import Resident from '../models/Resident.js';
 
+const NAME_MAX_LENGTH = 100;
+const ADDRESS_MAX_LENGTH = 300;
+
+// Type and length checks shared by sync and profile update. Returns an error message or null
+function validateProfileText({ name, address }) {
+  if (name !== undefined) {
+    if (typeof name !== 'string') return 'name must be a string';
+    if (name.trim().length > NAME_MAX_LENGTH) return `name must be at most ${NAME_MAX_LENGTH} characters`;
+  }
+  if (address !== undefined) {
+    if (typeof address !== 'string') return 'address must be a string';
+    if (address.trim().length > ADDRESS_MAX_LENGTH) return `address must be at most ${ADDRESS_MAX_LENGTH} characters`;
+  }
+  return null;
+}
+
 function serializeResident(resident) {
   return {
     Resident_ID: resident._id,
@@ -37,11 +53,9 @@ export async function syncResident(req, res) {
 
     const { name, address, latitude, longitude } = req.body || {};
 
-    if (name !== undefined && typeof name !== 'string') {
-      return res.status(400).json({ success: false, message: 'name must be a string' });
-    }
-    if (address !== undefined && typeof address !== 'string') {
-      return res.status(400).json({ success: false, message: 'address must be a string' });
+    const textError = validateProfileText({ name, address });
+    if (textError) {
+      return res.status(400).json({ success: false, message: textError });
     }
     if (latitude !== undefined || longitude !== undefined) {
       if (
@@ -82,8 +96,8 @@ export async function syncResident(req, res) {
         resident.Name = name.trim();
         updated = true;
       }
-      if (address !== undefined && resident.Address !== address) {
-        resident.Address = address;
+      if (address !== undefined && resident.Address !== address.trim()) {
+        resident.Address = address.trim();
         updated = true;
       }
       if (typeof latitude === 'number' && typeof longitude === 'number') {
@@ -106,7 +120,7 @@ export async function syncResident(req, res) {
       FirebaseUID: firebaseUid,
       Email: normalizedEmail,
       Name: (name && name.trim()) || 'Resident',
-      Address: address || '',
+      Address: (address && address.trim()) || '',
     };
 
     if (typeof latitude === 'number' && typeof longitude === 'number') {
@@ -120,6 +134,9 @@ export async function syncResident(req, res) {
   } catch (err) {
     if (err.code === 11000) {
       return res.status(409).json({ success: false, message: 'An account already exists for this email address' });
+    }
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: 'Validation failed', details: Object.values(err.errors).map((e) => e.message) });
     }
     console.error('[residentAuthController.syncResident]', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -145,9 +162,19 @@ export async function updateMyResidentProfile(req, res) {
   try {
     const { name, address, latitude, longitude, notificationRadius } = req.body || {};
 
+    const textError = validateProfileText({ name, address });
+    if (textError) {
+      return res.status(400).json({ success: false, message: textError });
+    }
+
     const update = {};
-    if (name !== undefined) update.Name = name;
-    if (address !== undefined) update.Address = address;
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(400).json({ success: false, message: 'name cannot be empty' });
+      }
+      update.Name = name.trim();
+    }
+    if (address !== undefined) update.Address = address.trim();
 
     if (latitude !== undefined || longitude !== undefined) {
       if (typeof latitude !== 'number' || typeof longitude !== 'number') {
@@ -167,6 +194,10 @@ export async function updateMyResidentProfile(req, res) {
       update.NotificationRadius = notificationRadius;
     }
 
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ success: false, message: 'No updatable fields provided' });
+    }
+
     const resident = await Resident.findOneAndUpdate(
       { FirebaseUID: req.residentFirebaseUid },
       { $set: update },
@@ -179,6 +210,9 @@ export async function updateMyResidentProfile(req, res) {
 
     return res.status(200).json({ success: true, message: 'Profile updated', data: serializeResident(resident) });
   } catch (err) {
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: 'Validation failed', details: Object.values(err.errors).map((e) => e.message) });
+    }
     console.error('[residentAuthController.updateMyResidentProfile]', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }

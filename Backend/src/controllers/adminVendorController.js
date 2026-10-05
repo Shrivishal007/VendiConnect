@@ -6,6 +6,11 @@ import { parsePagination, buildPageMeta } from '../utils/paginate.js';
 
 const VALID_STATUSES = ['ACTIVE', 'INACTIVE', 'SUSPENDED'];
 
+// Escape user input so it is matched literally inside a regex
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // List vendors with filtering and pagination
 export async function listVendors(req, res) {
   try {
@@ -26,7 +31,10 @@ export async function listVendors(req, res) {
       match.Category_ID = category;
     }
     if (q) {
-      match.Name = { $regex: String(q).trim(), $options: 'i' };
+      if (typeof q !== 'string') {
+        return res.status(400).json({ success: false, message: 'q must be a string' });
+      }
+      match.Name = { $regex: escapeRegex(q.trim()), $options: 'i' };
     }
 
     const [vendors, total] = await Promise.all([
@@ -113,6 +121,10 @@ export async function updateVendorStatus(req, res) {
     const vendor = await Vendor.findByIdAndUpdate(vendorId, { $set: { Status: status } }, { returnDocument: 'after' });
     if (!vendor) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
+    }
+
+    if (status !== 'ACTIVE') {
+      await Location.deleteOne({ Vendor_ID: vendorId });
     }
 
     const actor = req.admin?.email || 'unknown-admin';

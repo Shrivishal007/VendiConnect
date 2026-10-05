@@ -5,10 +5,12 @@ import Vendor from '../models/Vendor.js';
 
 const DEFAULT_WINDOW_DAYS = 7;
 
+// Get total alerts dispatched within a time period
 async function getTotalAlertsDispatched(periodStart, periodEnd) {
   return Alert.countDocuments({ Timestamp: { $gte: periodStart, $lte: periodEnd } });
 }
 
+// Calculate estimated active vendor hours based on location updates
 async function getEstimatedActiveVendorHours(periodStart, periodEnd) {
   const results = await ActivityLog.aggregate([
     {
@@ -62,6 +64,7 @@ async function getEstimatedActiveVendorHours(periodStart, periodEnd) {
   };
 }
 
+// Calculate average rating per category within a time period
 async function getAvgRatingPerCategory(periodStart, periodEnd) {
   return Ratings.aggregate([
     { $match: { RatingDate: { $gte: periodStart, $lte: periodEnd } } },
@@ -103,6 +106,7 @@ async function getAvgRatingPerCategory(periodStart, periodEnd) {
   ]);
 }
 
+// Calculate notification to interaction density ratio
 async function getNotificationToInteractionDensity(periodStart, periodEnd) {
   const [alertPairs, ratingPairs] = await Promise.all([
     Alert.aggregate([
@@ -142,6 +146,7 @@ async function getNotificationToInteractionDensity(periodStart, periodEnd) {
   };
 }
 
+// Generate comprehensive pilot report for a time period
 export async function generatePilotReport(options = {}) {
   const periodEnd = options.to instanceof Date ? options.to : new Date();
   const periodStart =

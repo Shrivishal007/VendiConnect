@@ -1,0 +1,13 @@
+{
+  "vendors": {
+    "235914215346254@lid": {
+      "name": "Vishal fruits",
+      "category": "Vegetables",
+      "vehicle": "Bicycle",
+      "language": "en",
+      "locationConsent": true,
+      "status": "ACTIVE",
+      "registeredAt": "2026-09-25T08:05:43.530Z"
+    }
+  }
+}

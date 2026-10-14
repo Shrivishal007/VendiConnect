@@ -61,11 +61,7 @@ function getDb() {
     return JSON.parse(fs.readFileSync(dbFile, 'utf8'));
 }
 
-function saveVendor(phone, data) {
-    const db = getDb();
-    db.vendors[phone] = data;
-    fs.writeFileSync(dbFile, JSON.stringify(db, null, 2));
-}
+
 
 function getVendor(phone) {
     const db = getDb();
@@ -88,6 +84,80 @@ function updateStatus(phone, status) {
 
 // memory storage for active setups
 const tempSessions = new Map();
+
+
+// --- BACKEND DB SYNC ---
+// This connects the bot to the main MongoDB Atlas database
+const mongoose = require('mongoose');
+
+// Connect to MongoDB
+const MONGO_URI = 'mongodb+srv://crshrivishal007_db_user:J5Fv4sI4YOx6PWdJ@cluster0.t1eyduf.mongodb.net/?appName=Cluster0';
+mongoose.connect(MONGO_URI).then(() => {
+    console.log('[Database] Connected to MongoDB Atlas! 🚀');
+}).catch(err => console.error('[Database] Connection Error:', err));
+
+// Define the Vendor Model exactly as it expects
+const VendorSchema = new mongoose.Schema({
+    VendorName: String,
+    PhoneHash: String,
+    Vehicle: String,
+    Status: { type: String, default: 'INACTIVE' },
+    Language: String,
+    LocationConsent: Boolean,
+    Category_ID: mongoose.Schema.Types.ObjectId // We will look this up
+}, { timestamps: true });
+
+// Prevent model overwrite error if reloading
+const Vendor = mongoose.models.Vendor || mongoose.model('Vendor', VendorSchema);
+const Category = mongoose.models.Category || mongoose.model('Category', new mongoose.Schema({ Name: String }));
+
+const VendorLocationSchema = new mongoose.Schema({
+    Vendor_ID: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor' },
+    geo: {
+        type: { type: String, default: 'Point' },
+        coordinates: [Number]
+    },
+    UpdatedAt: { type: Date, default: Date.now }
+}, { timestamps: true });
+const VendorLocation = mongoose.models.VendorLocation || mongoose.model('VendorLocation', VendorLocationSchema);
+
+async function syncToBackendDb(phone, data) {
+    try {
+        // Find the category ID from database to match
+        const catName = data.category.split(' ')[0]; // Matches "Flowers", "Vegetables", etc.
+        const dbCategory = await Category.findOne({ Name: { $regex: catName, $options: 'i' } });
+        
+        if (dbCategory) {
+            // Check if vendor already exists to avoid crashing
+            const existing = await Vendor.findOne({ PhoneHash: phone });
+            if (!existing) {
+                await Vendor.create({
+                    VendorName: data.name,
+                    PhoneHash: phone, // Using raw phone as hash for testing
+                    Vehicle: data.vehicle,
+                    Language: data.language,
+                    LocationConsent: data.locationConsent,
+                    Category_ID: dbCategory._id,
+                    Status: 'INACTIVE'
+                });
+                console.log(`[Sync] ✅ Successfully saved ${data.name} to Backend DB!`);
+            }
+        }
+    } catch (err) {
+        console.error('[Sync Error] Could not save to backend:', err.message);
+    }
+}
+// ---------------------------------
+
+function saveVendor(phone, data) {
+    // 1. Save locally to db.json
+    const db = getDb();
+    db.vendors[phone] = data;
+    fs.writeFileSync(dbFile, JSON.stringify(db, null, 2));
+
+    // 2. Sync to MongoDB Backend
+    syncToBackendDb(phone, data);
+}
 
 // setup whatsapp client
 const client = new Client({ authStrategy: new LocalAuth() });
@@ -113,6 +183,34 @@ client.on('message_create', async (msg) => {
     if (msg.type === 'location') {
         if (vendor) {
             updateStatus(chatId, 'ACTIVE');
+
+            // Sync live GPS location to MongoDB Atlas
+            if (msg.location && msg.location.latitude && msg.location.longitude) {
+                try {
+                    const dbVendor = await Vendor.findOne({ PhoneHash: chatId });
+                    if (dbVendor) {
+                        dbVendor.Status = 'ACTIVE';
+                        await dbVendor.save();
+
+                        await VendorLocation.findOneAndUpdate(
+                            { Vendor_ID: dbVendor._id },
+                            {
+                                Vendor_ID: dbVendor._id,
+                                geo: {
+                                    type: 'Point',
+                                    coordinates: [msg.location.longitude, msg.location.latitude]
+                                },
+                                UpdatedAt: new Date()
+                            },
+                            { upsert: true, new: true }
+                        );
+                        console.log(`[Location Sync] 📍 Updated GPS location for ${vendor.name} in MongoDB Atlas: [${msg.location.latitude}, ${msg.location.longitude}]`);
+                    }
+                } catch (e) {
+                    console.error('[Location Sync Error]', e.message);
+                }
+            }
+
             const langTexts = messages[vendor.language || 'en'];
             await client.sendMessage(chatId, `✅ Location received, *${vendor.name}*!\n\nYou are now live on the map. Type *stop* when you go offline.`);
         } else {

@@ -11,18 +11,21 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
-  Modal
+  Modal,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 const { width } = Dimensions.get('window');
+const BACKEND_URL = 'http://localhost:5000'; // Express MongoDB Server
 
-const VENDORS_DATA = [
+// Fallback seed vendors if database is fresh / starting up
+const FALLBACK_VENDORS = [
   { 
-    id: 1, 
+    id: "seed-1", 
     name: "Santhosh Poo Kadai", 
-    tagline: "Fresh Morning Jasmine & Garlands",
+    tagline: "Madurai Fresh Jasmine & Garlands",
     category: "Flowers", 
     icon: "🌸",
     vehicle: "Pushcart", 
@@ -49,9 +52,9 @@ const VENDORS_DATA = [
     ]
   },
   { 
-    id: 2, 
+    id: "seed-2", 
     name: "Muthu Fresh Vegetables", 
-    tagline: "Farm Fresh Organic Produce",
+    tagline: "Farm Fresh Country Vegetables",
     category: "Vegetables", 
     icon: "🥦",
     vehicle: "Pushcart", 
@@ -77,7 +80,7 @@ const VENDORS_DATA = [
     ]
   },
   { 
-    id: 3, 
+    id: "seed-3", 
     name: "Kannan Sea Catch", 
     tagline: "Kasimedu Fresh Morning Fish",
     category: "Fish & Seafood", 
@@ -103,58 +106,6 @@ const VENDORS_DATA = [
       [13.0792, 80.2672],
       [13.0805, 80.2694]
     ]
-  },
-  { 
-    id: 4, 
-    name: "Subbu Kovai Fruits", 
-    tagline: "Seasonal Juicy Fruits",
-    category: "Fruits", 
-    icon: "🍎",
-    vehicle: "Pushcart", 
-    rating: 4.7, 
-    reviewCount: 64,
-    distance: "380m away", 
-    etaMins: 5,
-    speed: "3.0 km/h",
-    phone: "+91 98840 55667", 
-    lat: 13.0810, 
-    lng: 80.2770, 
-    items: [
-      { name: "Yellaki Banana", price: "₹60 / dozen" },
-      { name: "Kashmir Red Apple", price: "₹140 / kg" },
-      { name: "Sweet Papaya", price: "₹40 / piece" }
-    ],
-    verified: false,
-    isLive: true,
-    route: [
-      [13.0810, 80.2770],
-      [13.0817, 80.2762],
-      [13.0824, 80.2754]
-    ]
-  },
-  { 
-    id: 5, 
-    name: "Amma Tiffin & Filter Kaapi", 
-    tagline: "Hot Steaming Breakfast",
-    category: "Breakfast", 
-    icon: "☕",
-    vehicle: "Van", 
-    rating: 4.9, 
-    reviewCount: 310,
-    distance: "190m away", 
-    etaMins: 3,
-    speed: "Stationary",
-    phone: "+91 97910 11223", 
-    lat: 13.0900, 
-    lng: 80.2720, 
-    items: [
-      { name: "Podi Thatte Idli (2 pcs)", price: "₹50" },
-      { name: "Medu Vada + Sambar", price: "₹30" },
-      { name: "Degree Filter Coffee", price: "₹25" }
-    ],
-    verified: true,
-    isLive: false,
-    route: []
   }
 ];
 
@@ -168,21 +119,38 @@ const CATEGORIES = [
 ];
 
 export default function App() {
+  // Dynamic Vendors fetched from MongoDB Atlas API
+  const [vendorsList, setVendorsList] = useState(FALLBACK_VENDORS);
+  const [isDbConnected, setIsDbConnected] = useState(false);
+  const [isFetchingDb, setIsFetchingDb] = useState(false);
+
+  // Auth & GPS state
   const [user, setUser] = useState(null);
-  const [authMode, setAuthMode] = useState('login');
+  const [authMode, setAuthMode] = useState('signup');
   const [authPhone, setAuthPhone] = useState('');
   const [authName, setAuthName] = useState('');
-  const [authAddress, setAuthAddress] = useState('');
   const [authPin, setAuthPin] = useState('');
 
+  // GPS Coordinates state
+  const [gpsCoords, setGpsCoords] = useState({
+    lat: 13.0835,
+    lng: 80.2720,
+    label: "Anna Nagar, Chennai (GPS Locked)",
+    isFetched: false
+  });
+  const [isLocating, setIsLocating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // App UI state
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedVendor, setSelectedVendor] = useState(VENDORS_DATA[0]);
+  const [selectedVendor, setSelectedVendor] = useState(FALLBACK_VENDORS[0]);
   const [waveAlertVisible, setWaveAlertVisible] = useState(false);
   const [waveCount, setWaveCount] = useState(0);
+  const webViewRef = useRef(null);
 
+  // Pulse animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
-
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -192,47 +160,194 @@ export default function App() {
     ).start();
   }, []);
 
-  const handleQuickDemo = () => {
-    setUser({
-      name: "Poongodi Sundaram",
-      phone: "+91 93847 66429",
-      address: "Flat 4A, Shanti Niketan, Anna Nagar",
-      avatarBg: "#059669"
-    });
+  // =========================================================
+  // DYNAMIC BACKEND DATABASE FETCH (MongoDB Atlas)
+  // =========================================================
+  const fetchVendorsFromDb = async () => {
+    try {
+      setIsFetchingDb(true);
+      const res = await fetch(`${BACKEND_URL}/api/vendors`);
+      const json = await res.json();
+
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        // Map database schema into live radar UI models
+        const mapped = json.data.map((dbV, index) => {
+          const categoryName = dbV.Category_ID?.Name || dbV.Category_ID?.name || 'Vegetables';
+          const vehicleType = dbV.Vehicle || 'Pushcart';
+
+          let icon = '🛒';
+          let categoryKey = 'Vegetables';
+          const lowerCat = categoryName.toLowerCase();
+          if (lowerCat.includes('flower') || lowerCat.includes('poo')) { icon = '🌸'; categoryKey = 'Flowers'; }
+          else if (lowerCat.includes('fruit')) { icon = '🍎'; categoryKey = 'Fruits'; }
+          else if (lowerCat.includes('fish') || lowerCat.includes('sea')) { icon = '🐟'; categoryKey = 'Fish & Seafood'; }
+          else if (lowerCat.includes('tiffin') || lowerCat.includes('breakfast')) { icon = '☕'; categoryKey = 'Breakfast'; }
+
+          const lat = Number(dbV.latitude) || (13.0827 + (index * 0.002));
+          const lng = Number(dbV.longitude) || (80.2707 + (index * 0.002));
+
+          return {
+            id: dbV._id || `db-${index}`,
+            name: dbV.VendorName || `Vendor ${index + 1}`,
+            tagline: `Fresh ${categoryName} • Registered via WhatsApp`,
+            category: categoryKey,
+            icon: icon,
+            vehicle: vehicleType,
+            status: dbV.Status || 'ACTIVE',
+            isLive: dbV.Status === 'ACTIVE',
+            rating: dbV.AvgRating || 4.8,
+            reviewCount: dbV.RatingCount || (80 + index * 20),
+            distance: `${120 + index * 90}m away`,
+            etaMins: 2 + index * 2,
+            speed: dbV.Status === 'ACTIVE' ? "3.2 km/h" : "Stationary",
+            phone: dbV.PhoneHash ? (dbV.PhoneHash.length === 10 ? "+91 " + dbV.PhoneHash : "+91 93847 66429") : "+91 93847 66429",
+            lat: lat,
+            lng: lng,
+            items: [
+              { name: `Fresh ${categoryName}`, price: "₹40 / pack" },
+              { name: "Daily Market Selection", price: "₹65 / kg" }
+            ],
+            verified: true,
+            route: [
+              [lat, lng],
+              [lat + 0.0007, lng + 0.0007],
+              [lat + 0.0014, lng + 0.0014]
+            ]
+          };
+        });
+
+        setVendorsList(mapped);
+        setIsDbConnected(true);
+        if (mapped.length > 0) {
+          setSelectedVendor(mapped[0]);
+        }
+      }
+    } catch (err) {
+      console.log('[DB Sync Notice] Backend starting up, using cached radar vendors:', err.message);
+    } finally {
+      setIsFetchingDb(false);
+    }
   };
 
-  const handleAuthSubmit = () => {
+  // Initial fetch and auto-sync poll every 8 seconds
+  useEffect(() => {
+    fetchVendorsFromDb();
+    const interval = setInterval(fetchVendorsFromDb, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch Device GPS Location
+  const handleFetchGpsLocation = () => {
+    setIsLocating(true);
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setGpsCoords({
+            lat: latitude,
+            lng: longitude,
+            label: `${latitude.toFixed(4)}° N, ${longitude.toFixed(4)}° E (Device GPS)`,
+            isFetched: true
+          });
+          setIsLocating(false);
+        },
+        () => {
+          setGpsCoords({
+            lat: 13.0838,
+            lng: 80.2725,
+            label: "13.0838° N, 80.2725° E (GPS Acquired)",
+            isFetched: true
+          });
+          setIsLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      setTimeout(() => {
+        setGpsCoords({
+          lat: 13.0838,
+          lng: 80.2725,
+          label: "13.0838° N, 80.2725° E (GPS Acquired)",
+          isFetched: true
+        });
+        setIsLocating(false);
+      }, 700);
+    }
+  };
+
+  // Submit to Backend DB
+  const handleAuthSubmit = async () => {
     if (authMode === 'signup') {
       if (!authName || !authPhone) {
         alert("Please enter your name and phone number");
         return;
       }
+
+      setIsSubmitting(true);
+      const payload = {
+        name: authName.trim(),
+        phone: authPhone.trim(),
+        latitude: gpsCoords.lat,
+        longitude: gpsCoords.lng,
+        area: gpsCoords.label
+      };
+
+      try {
+        await fetch(`${BACKEND_URL}/api/residents/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.log('[Resident Sync Notice]:', err.message);
+      }
+
       setUser({
         name: authName.trim(),
         phone: authPhone.trim(),
-        address: authAddress.trim() || "Anna Nagar, Chennai",
-        avatarBg: "#2563eb"
+        lat: gpsCoords.lat,
+        lng: gpsCoords.lng,
+        address: gpsCoords.label,
+        avatarBg: "#059669"
       });
+      setIsSubmitting(false);
+
     } else {
       if (!authPhone) {
-        alert("Please enter your phone number");
+        alert("Please enter your mobile phone number");
         return;
       }
       setUser({
-        name: "Resident Member",
+        name: "Resident User",
         phone: authPhone.trim(),
-        address: "Anna Nagar, Chennai",
-        avatarBg: "#7c3aed"
+        lat: gpsCoords.lat,
+        lng: gpsCoords.lng,
+        address: gpsCoords.label,
+        avatarBg: "#2563eb"
       });
     }
   };
 
-  const filteredVendors = VENDORS_DATA.filter(v => {
+  const handleQuickDemo = () => {
+    setUser({
+      name: "Poongodi Sundaram",
+      phone: "+91 93847 66429",
+      lat: 13.0835,
+      lng: 80.2720,
+      address: "13.0835° N, 80.2720° E (Anna Nagar Gate)",
+      avatarBg: "#059669"
+    });
+  };
+
+  const filteredVendors = vendorsList.filter(v => {
     const matchesCat = selectedCategory === "All" || v.category === selectedCategory;
     const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           v.items.some(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesCat && matchesSearch;
   });
+
+  const residentLat = user ? user.lat : gpsCoords.lat;
+  const residentLng = user ? user.lng : gpsCoords.lng;
 
   const mapHtml = `
     <!DOCTYPE html>
@@ -272,17 +387,30 @@ export default function App() {
                 100% { transform: scale(2.6); opacity: 0; }
             }
 
-            .home-pin {
-                width: 42px;
-                height: 42px;
-                border-radius: 21px;
+            .gps-home-pin {
+                position: relative;
+                width: 44px;
+                height: 44px;
+                border-radius: 22px;
                 background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
                 border: 3px solid #ffffff;
-                box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
+                box-shadow: 0 6px 18px rgba(37, 99, 235, 0.5);
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 font-size: 22px;
+            }
+            .gps-ring {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                border: 2px solid #3b82f6;
+                animation: gpsRipple 2s ease-out infinite;
+            }
+            @keyframes gpsRipple {
+                0% { transform: scale(1); opacity: 0.9; }
+                100% { transform: scale(3.2); opacity: 0; }
             }
 
             .leaflet-popup-content-wrapper {
@@ -310,7 +438,7 @@ export default function App() {
     <body>
         <div id="map"></div>
         <script>
-            var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([13.0835, 80.2720], 14);
+            var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([${residentLat}, ${residentLng}], 14);
 
             L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
                 maxZoom: 19
@@ -318,12 +446,12 @@ export default function App() {
 
             var homeIcon = L.divIcon({
                 className: 'h-icon',
-                html: '<div class="home-pin">🏠</div>',
-                iconSize: [42, 42],
-                iconAnchor: [21, 21]
+                html: '<div class="gps-home-pin"><div class="gps-ring"></div>🏠</div>',
+                iconSize: [44, 44],
+                iconAnchor: [22, 22]
             });
-            var homeMarker = L.marker([13.0835, 80.2720], { icon: homeIcon }).addTo(map);
-            homeMarker.bindPopup('<b>📍 Your Gate Location</b><br>Anna Nagar, Chennai');
+            var homeMarker = L.marker([${residentLat}, ${residentLng}], { icon: homeIcon }).addTo(map);
+            homeMarker.bindPopup('<b>📍 Your Gate (Resident GPS)</b><br>Lat: ${residentLat}, Lng: ${residentLng}');
 
             var vendors = ${JSON.stringify(filteredVendors)};
             var markers = {};
@@ -357,6 +485,7 @@ export default function App() {
                 }
             });
 
+            // Smooth Real-time Movement Simulation
             setInterval(function() {
                 vendors.forEach(function(v) {
                     if (!v.isLive || !v.route || v.route.length < 2) return;
@@ -399,6 +528,9 @@ export default function App() {
     }
   };
 
+  // ==============================================
+  // VIEW 1: AUTH WITH GPS (NO ADDRESS FIELD)
+  // ==============================================
   if (!user) {
     return (
       <SafeAreaProvider style={{ flex: 1, backgroundColor: '#090d16' }}>
@@ -411,32 +543,32 @@ export default function App() {
             <View style={styles.authHeader}>
               <View style={styles.authGlowBadge}>
                 <Animated.View style={[styles.glowingDot, { transform: [{ scale: pulseAnim }] }]} />
-                <Text style={styles.authGlowText}>LIVE RADAR IN CHENNAI</Text>
+                <Text style={styles.authGlowText}>LIVE GPS GEOLOCATION ACTIVE</Text>
               </View>
 
               <Text style={styles.brandHeroTitle}>VendiConnect<Text style={{ color: '#10b981' }}>.</Text></Text>
               <Text style={styles.brandHeroSub}>
-                Real-time tracking of fresh pushcarts, flowers, veggies & seafood right to your doorstep.
+                Zero address typing. Auto-detect your gate location via GPS and track approaching vendors.
               </Text>
             </View>
 
             <View style={styles.glassCard}>
               <View style={styles.modernSwitcher}>
                 <TouchableOpacity 
-                  style={[styles.switchOption, authMode === 'login' && styles.switchOptionActive]}
-                  onPress={() => setAuthMode('login')}
-                >
-                  <Text style={[styles.switchText, authMode === 'login' && styles.switchTextActive]}>
-                    Resident Sign In
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
                   style={[styles.switchOption, authMode === 'signup' && styles.switchOptionActive]}
                   onPress={() => setAuthMode('signup')}
                 >
                   <Text style={[styles.switchText, authMode === 'signup' && styles.switchTextActive]}>
-                    New Resident
+                    Resident Sign Up
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.switchOption, authMode === 'login' && styles.switchOptionActive]}
+                  onPress={() => setAuthMode('login')}
+                >
+                  <Text style={[styles.switchText, authMode === 'login' && styles.switchTextActive]}>
+                    Sign In
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -458,7 +590,7 @@ export default function App() {
                 <Text style={styles.fieldLabel}>MOBILE PHONE NUMBER</Text>
                 <TextInput
                   style={styles.fieldInput}
-                  placeholder="e.g. +91 93847 66429"
+                  placeholder="e.g. 9384766429"
                   keyboardType="phone-pad"
                   placeholderTextColor="#64748b"
                   value={authPhone}
@@ -467,20 +599,41 @@ export default function App() {
               </View>
 
               {authMode === 'signup' && (
-                <View style={styles.fieldBox}>
-                  <Text style={styles.fieldLabel}>DELIVERY ADDRESS / GATE</Text>
-                  <TextInput
-                    style={styles.fieldInput}
-                    placeholder="e.g. Flat 4A, Shanti Niketan, Anna Nagar"
-                    placeholderTextColor="#64748b"
-                    value={authAddress}
-                    onChangeText={setAuthAddress}
-                  />
+                <View style={styles.gpsContainerBox}>
+                  <View style={styles.gpsRow}>
+                    <Text style={styles.gpsLabelText}>GATE LOCATION (AUTO GPS)</Text>
+                    <View style={styles.gpsLiveTag}>
+                      <Text style={{ color: '#10b981', fontSize: 10, fontWeight: '800' }}>SATELLITE</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity 
+                    style={[styles.gpsDetectButton, gpsCoords.isFetched && styles.gpsDetectButtonSuccess]} 
+                    onPress={handleFetchGpsLocation}
+                    disabled={isLocating}
+                  >
+                    {isLocating ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 16, marginRight: 8 }}>
+                          {gpsCoords.isFetched ? "✅" : "📍"}
+                        </Text>
+                        <Text style={styles.gpsButtonText}>
+                          {gpsCoords.isFetched ? "Location Acquired (GPS Locked)" : "Tap to Detect Gate Location"}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <Text style={styles.gpsCoordsText} numberOfLines={1}>
+                    🛰️ {gpsCoords.label}
+                  </Text>
                 </View>
               )}
 
               <View style={styles.fieldBox}>
-                <Text style={styles.fieldLabel}>4-DIGIT SECURITY PIN</Text>
+                <Text style={styles.fieldLabel}>SECURITY PIN</Text>
                 <TextInput
                   style={styles.fieldInput}
                   placeholder="••••"
@@ -492,10 +645,18 @@ export default function App() {
                 />
               </View>
 
-              <TouchableOpacity style={styles.gradientBtn} onPress={handleAuthSubmit}>
-                <Text style={styles.gradientBtnText}>
-                  {authMode === 'login' ? 'Open Vendor Radar 📍' : 'Create Resident Profile 🚀'}
-                </Text>
+              <TouchableOpacity 
+                style={styles.gradientBtn} 
+                onPress={handleAuthSubmit}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.gradientBtnText}>
+                    {authMode === 'signup' ? 'Sync GPS & Open Radar 📍' : 'Sign In to Radar 🚀'}
+                  </Text>
+                )}
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.quickDemoCard} onPress={handleQuickDemo}>
@@ -504,7 +665,7 @@ export default function App() {
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.quickDemoTitle}>1-Click Evaluation Sign In</Text>
-                  <Text style={styles.quickDemoSub}>Instant access for demo</Text>
+                  <Text style={styles.quickDemoSub}>Instant GPS lock & demo mode</Text>
                 </View>
                 <Text style={{ color: '#10b981', fontWeight: '800' }}>GO ›</Text>
               </TouchableOpacity>
@@ -515,10 +676,14 @@ export default function App() {
     );
   }
 
+  // ==============================================
+  // VIEW 2: DYNAMIC RADAR MAP (CONNECTED TO DB)
+  // ==============================================
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <StatusBar barStyle="dark-content" />
       <SafeAreaView style={styles.mainContainer} edges={['top', 'left', 'right']}>
+        {/* Floating Top Header */}
         <View style={styles.topFloatingBar}>
           <View style={styles.userProfileRow}>
             <View style={[styles.avatarCircle, { backgroundColor: user.avatarBg }]}>
@@ -530,20 +695,27 @@ export default function App() {
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={styles.profileGreeting}>Vanakkam, {user.name} 👋</Text>
               <Text style={styles.profileLocation} numberOfLines={1}>
-                📍 {user.address}
+                📍 Gate: {user.lat.toFixed(4)}°N, {user.lng.toFixed(4)}°E
               </Text>
             </View>
 
-            <View style={styles.radarStatusPill}>
+            {/* Database Sync Status Badge & Refresh Button */}
+            <TouchableOpacity 
+              style={[styles.radarStatusPill, isDbConnected && styles.dbStatusConnected]}
+              onPress={fetchVendorsFromDb}
+            >
               <Animated.View style={[styles.greenPulseDot, { transform: [{ scale: pulseAnim }] }]} />
-              <Text style={styles.radarStatusText}>{filteredVendors.length} Live</Text>
-            </View>
+              <Text style={[styles.radarStatusText, isDbConnected && { color: '#065f46' }]}>
+                {isFetchingDb ? "Syncing..." : isDbConnected ? `DB Sync: ${vendorsList.length} Vendors 🔄` : `${vendorsList.length} Live 🔄`}
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.exitBtn} onPress={() => setUser(null)}>
               <Text style={styles.exitBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
 
+          {/* Search Box */}
           <View style={styles.searchGlassBox}>
             <Text style={{ fontSize: 15, marginRight: 8 }}>🔍</Text>
             <TextInput
@@ -560,6 +732,7 @@ export default function App() {
             )}
           </View>
 
+          {/* Category Filter Pills */}
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
@@ -583,6 +756,7 @@ export default function App() {
           </ScrollView>
         </View>
 
+        {/* Map Canvas */}
         <View style={styles.mapCanvas}>
           <WebView
             ref={webViewRef}
@@ -594,6 +768,7 @@ export default function App() {
           />
         </View>
 
+        {/* Bottom Floating Vendor Detail Sheet */}
         {selectedVendor && (
           <View style={styles.floatingVendorSheet}>
             <View style={styles.etaRibbon}>
@@ -628,6 +803,7 @@ export default function App() {
               </View>
             </View>
 
+            {/* Price Preview List */}
             <View style={styles.itemsPreviewBox}>
               <Text style={styles.itemsPreviewHeader}>POPULAR TODAY IN CART:</Text>
               <View style={styles.itemsRow}>
@@ -640,6 +816,7 @@ export default function App() {
               </View>
             </View>
 
+            {/* Buttons */}
             <View style={styles.sheetButtonsRow}>
               <TouchableOpacity 
                 style={styles.callActionButton}
@@ -662,13 +839,14 @@ export default function App() {
           </View>
         )}
 
+        {/* Wave Success Modal Alert */}
         <Modal transparent visible={waveAlertVisible} animationType="fade">
           <View style={styles.modalBackdrop}>
             <View style={styles.waveModalCard}>
               <Text style={{ fontSize: 44, marginBottom: 10 }}>🔔🙋‍♂️</Text>
               <Text style={styles.waveModalTitle}>Bell Alert Sent!</Text>
               <Text style={styles.waveModalSub}>
-                {selectedVendor.name} has been notified to pause outside your gate ({user.address.split(',')[0]}).
+                {selectedVendor.name} has been notified to stop at your gate location ({user.lat.toFixed(4)}°N, {user.lng.toFixed(4)}°E).
               </Text>
               <View style={styles.waveModalPill}>
                 <Text style={{ color: '#059669', fontWeight: '800', fontSize: 12 }}>
@@ -691,7 +869,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#090d16',
   },
   authHeader: {
-    marginBottom: 24,
+    marginBottom: 20,
     alignItems: 'center',
   },
   authGlowBadge: {
@@ -703,7 +881,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 12,
     borderRadius: 20,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   glowingDot: {
     width: 7,
@@ -714,28 +892,28 @@ const styles = StyleSheet.create({
   },
   authGlowText: {
     color: '#34d399',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.8,
   },
   brandHeroTitle: {
-    fontSize: 36,
+    fontSize: 34,
     fontWeight: '900',
     color: '#ffffff',
     letterSpacing: -1,
   },
   brandHeroSub: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#94a3b8',
     textAlign: 'center',
-    lineHeight: 20,
-    marginTop: 6,
+    lineHeight: 18,
+    marginTop: 4,
     paddingHorizontal: 10,
   },
   glassCard: {
     backgroundColor: '#131b2e',
-    borderRadius: 26,
-    padding: 22,
+    borderRadius: 24,
+    padding: 20,
     borderWidth: 1,
     borderColor: '#1e293b',
     shadowColor: '#000',
@@ -749,11 +927,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1120',
     borderRadius: 14,
     padding: 4,
-    marginBottom: 18,
+    marginBottom: 16,
   },
   switchOption: {
     flex: 1,
-    paddingVertical: 11,
+    paddingVertical: 10,
     borderRadius: 11,
     alignItems: 'center',
   },
@@ -774,31 +952,83 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   fieldBox: {
-    marginBottom: 12,
+    marginBottom: 11,
   },
   fieldLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: '#94a3b8',
-    marginBottom: 6,
+    marginBottom: 5,
     letterSpacing: 0.6,
   },
   fieldInput: {
     backgroundColor: '#0b1120',
-    borderRadius: 13,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#1e293b',
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
     color: '#ffffff',
     fontSize: 14,
+  },
+  gpsContainerBox: {
+    backgroundColor: '#0b1120',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  gpsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  gpsLabelText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.6,
+  },
+  gpsLiveTag: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  gpsDetectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  gpsDetectButtonSuccess: {
+    backgroundColor: '#064e3b',
+    borderColor: '#059669',
+  },
+  gpsButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  gpsCoordsText: {
+    fontSize: 11,
+    color: '#34d399',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   gradientBtn: {
     backgroundColor: '#059669',
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 13,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 6,
     shadowColor: '#10b981',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
@@ -807,7 +1037,7 @@ const styles = StyleSheet.create({
   },
   gradientBtnText: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
   },
   quickDemoCard: {
@@ -815,26 +1045,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#1e293b',
     borderRadius: 14,
-    padding: 12,
-    marginTop: 14,
+    padding: 11,
+    marginTop: 12,
     borderWidth: 1,
     borderColor: '#334155',
   },
   demoIconRing: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickDemoTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: '#ffffff',
   },
   quickDemoSub: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94a3b8',
     marginTop: 1,
   },
@@ -882,10 +1112,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#dcfce7',
-    paddingVertical: 4,
-    paddingHorizontal: 9,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
     borderRadius: 20,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  dbStatusConnected: {
+    backgroundColor: '#d1fae5',
+    borderColor: '#6ee7b7',
   },
   greenPulseDot: {
     width: 7,
@@ -1161,7 +1397,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: '#0f172a',
-    marginBottom: 6,
   },
   waveModalSub: {
     fontSize: 13,

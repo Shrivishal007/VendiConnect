@@ -1,9 +1,8 @@
 /**
  * controllers/vendorController.js
  * -----------------------------------------------------------------------
- * Handles vendor registration (Week 1/2 scope).
- * Hashes the raw phone number using the same HMAC-SHA256 approach
- * as utils/geoPrivacy.js so lookups from the WhatsApp webhook match.
+ * Handles vendor registration, listing, status updates (Admin & Bot),
+ * and active vendor summaries (Resident App).
  * -----------------------------------------------------------------------
  */
 
@@ -18,6 +17,67 @@ const hashPhoneNumber = (phone) => {
   return crypto.createHmac('sha256', secret).update(String(phone).trim()).digest('hex');
 };
 
+const MAX_LIMIT = 100;
+const DEFAULT_LIMIT = 50;
+
+/**
+ * GET /api/vendors/active-summary
+ * Get summary of active vendors for Resident App
+ */
+export async function getActiveVendorsSummary(req, res) {
+  try {
+    const { category } = req.query;
+
+    if (category && !mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({ success: false, message: 'Invalid category id' });
+    }
+
+    const requestedLimit = parseInt(req.query.limit, 10);
+    const limit =
+      Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(requestedLimit, MAX_LIMIT)
+        : DEFAULT_LIMIT;
+
+    const match = { Status: 'ACTIVE' };
+    if (category) {
+      match.Category_ID = category;
+    }
+
+    const vendors = await Vendor.find(match)
+      .select('Name VendorName Category_ID AvgRating')
+      .limit(limit)
+      .lean();
+
+    if (vendors.length === 0) {
+      return res.status(200).json({ success: true, count: 0, data: [] });
+    }
+
+    const vendorIds = vendors.map((v) => v._id);
+
+    const locations = await VendorLocation.find({ Vendor_ID: { $in: vendorIds } })
+      .select('Vendor_ID geo')
+      .lean();
+
+    const geoByVendorId = new Map(locations.map((loc) => [String(loc.Vendor_ID), loc]));
+
+    const data = vendors.map((vendor) => {
+      const location = geoByVendorId.get(String(vendor._id)) || null;
+      return {
+        VendorName: vendor.VendorName || vendor.Name,
+        Category_ID: vendor.Category_ID,
+        AvgRating: vendor.AvgRating || 4.5,
+        geo: location?.geo || null,
+        status: 'ACTIVE',
+      };
+    });
+
+    return res.status(200).json({ success: true, count: data.length, data });
+  } catch (err) {
+    console.error('[vendorController.getActiveVendorsSummary]', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+}
+
 /**
  * POST /api/vendors/register
  * Body: { vendorName, phone, vehicle, categoryId }
@@ -26,7 +86,6 @@ export const registerVendor = async (req, res) => {
   try {
     const { vendorName, phone, vehicle, categoryId } = req.body;
 
-    // --- Validation ---
     if (!vendorName || !phone || !categoryId) {
       return res.status(400).json({
         success: false,
@@ -34,7 +93,7 @@ export const registerVendor = async (req, res) => {
       });
     }
 
-    const cleanPhone = String(phone).replace(/\D/g, ''); // strip non-digits
+    const cleanPhone = String(phone).replace(/\D/g, '');
     if (cleanPhone.length < 10) {
       return res.status(400).json({
         success: false,
@@ -46,16 +105,13 @@ export const registerVendor = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid categoryId.' });
     }
 
-    // --- Check category exists ---
     const categoryExists = await Category.exists({ _id: categoryId });
     if (!categoryExists) {
       return res.status(404).json({ success: false, message: 'Category not found.' });
     }
 
-    // --- Hash phone (HMAC-SHA256, matches geoPrivacy.js) ---
     const phoneHash = hashPhoneNumber(cleanPhone);
 
-    // --- Check for duplicate ---
     const duplicate = await Vendor.findOne({ PhoneHash: phoneHash });
     if (duplicate) {
       return res.status(409).json({
@@ -64,7 +120,6 @@ export const registerVendor = async (req, res) => {
       });
     }
 
-    // --- Create vendor ---
     const vendor = await Vendor.create({
       VendorName: vendorName.trim(),
       PhoneHash: phoneHash,
@@ -91,7 +146,7 @@ export const registerVendor = async (req, res) => {
 
 /**
  * GET /api/vendors
- * Returns a list of all registered vendors (basic info, no PhoneHash exposed).
+ * Returns a list of all registered vendors enriched with live locations.
  */
 export const getAllVendors = async (req, res) => {
   try {
@@ -99,7 +154,6 @@ export const getAllVendors = async (req, res) => {
       .populate('Category_ID', 'Name name')
       .lean();
 
-    // Query live locations from VendorLocation collection
     const vendorIds = vendors.map(v => v._id);
     const locations = await VendorLocation.find({ Vendor_ID: { $in: vendorIds } }).lean();
     const locMap = new Map();
@@ -113,7 +167,6 @@ export const getAllVendors = async (req, res) => {
       }
     });
 
-    // Default coordinates around Anna Nagar sector for vendors without live GPS ping
     const defaultCoords = [
       [13.0827, 80.2707],
       [13.0850, 80.2750],

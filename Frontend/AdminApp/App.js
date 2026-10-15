@@ -4,26 +4,111 @@ import {
   View, 
   Text, 
   TextInput, 
+  ScrollView, 
   TouchableOpacity, 
-  Dimensions 
+  Dimensions,
+  Modal
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 
 const INITIAL_VENDORS = [
-  { id: 1, name: "Santhosh Poo Kadai", category: "Flowers", vehicle: "Pushcart", status: "ACTIVE" },
-  { id: 2, name: "Muthu Fresh Vegetables", category: "Vegetables", vehicle: "Pushcart", status: "ACTIVE" },
-  { id: 3, name: "Kannan Sea Catch", category: "Fish & Seafood", vehicle: "Auto-rickshaw", status: "ACTIVE" },
-  { id: 4, name: "Subbu Kovai Fruits", category: "Fruits", vehicle: "Pushcart", status: "PENDING" },
-  { id: 5, name: "Amma Tiffin & Kaapi", category: "Breakfast", vehicle: "Van", status: "INACTIVE" },
-  { id: 6, name: "Murugan Chai & Snacks", category: "Snacks", vehicle: "Bicycle", status: "SUSPENDED" }
+  { 
+    id: 1, 
+    name: "Santhosh Poo Kadai", 
+    phone: "+91 93847 66429",
+    category: "Flowers", 
+    vehicle: "Pushcart", 
+    status: "ACTIVE", 
+    rating: 4.9, 
+    tripsToday: 18,
+    lat: 13.0827, 
+    lng: 80.2707,
+    registeredDate: "12 Sep 2026",
+    verified: true
+  },
+  { 
+    id: 2, 
+    name: "Muthu Fresh Vegetables", 
+    phone: "+91 98401 23456",
+    category: "Vegetables", 
+    vehicle: "Pushcart", 
+    status: "ACTIVE", 
+    rating: 4.8, 
+    tripsToday: 24,
+    lat: 13.0850, 
+    lng: 80.2750,
+    registeredDate: "15 Sep 2026",
+    verified: true
+  },
+  { 
+    id: 3, 
+    name: "Kannan Sea Catch", 
+    phone: "+91 94440 98765",
+    category: "Fish & Seafood", 
+    vehicle: "Auto-rickshaw", 
+    status: "ACTIVE", 
+    rating: 4.9, 
+    tripsToday: 31,
+    lat: 13.0780, 
+    lng: 80.2650,
+    registeredDate: "18 Sep 2026",
+    verified: true
+  },
+  { 
+    id: 4, 
+    name: "Subbu Kovai Fruits", 
+    phone: "+91 98840 55667",
+    category: "Fruits", 
+    vehicle: "Pushcart", 
+    status: "PENDING", 
+    rating: 4.5, 
+    tripsToday: 0,
+    lat: 13.0810, 
+    lng: 80.2770,
+    registeredDate: "05 Oct 2026",
+    verified: false
+  },
+  { 
+    id: 5, 
+    name: "Amma Tiffin & Kaapi", 
+    phone: "+91 97910 11223",
+    category: "Breakfast", 
+    vehicle: "Van", 
+    status: "INACTIVE", 
+    rating: 4.7, 
+    tripsToday: 12,
+    lat: 13.0900, 
+    lng: 80.2720,
+    registeredDate: "20 Sep 2026",
+    verified: true
+  },
+  { 
+    id: 6, 
+    name: "Murugan Chai & Snacks", 
+    phone: "+91 91234 56789",
+    category: "Snacks", 
+    vehicle: "Bicycle", 
+    status: "SUSPENDED", 
+    rating: 4.2, 
+    tripsToday: 5,
+    lat: 13.0835, 
+    lng: 80.2715,
+    registeredDate: "01 Oct 2026",
+    verified: false
+  }
 ];
+
+const CATEGORIES = ["ALL", "Flowers", "Vegetables", "Fish & Seafood", "Fruits", "Breakfast", "Snacks"];
 
 export default function App() {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [activeTab, setActiveTab] = useState('vendors'); // 'vendors' | 'radar' | 'alerts'
-  const [vendorsList] = useState(INITIAL_VENDORS);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [vendorsList, setVendorsList] = useState(INITIAL_VENDORS);
+  const [selectedVendorModal, setSelectedVendorModal] = useState(null);
 
   const handleAdminLogin = () => {
     if (!adminEmail || !adminPassword) {
@@ -39,7 +124,24 @@ export default function App() {
     setIsAdminLoggedIn(true);
   };
 
-  // Status counters for KPI Cards
+  // Status toggle
+  const toggleVendorStatus = (id, newStatus) => {
+    setVendorsList(prev => prev.map(v => v.id === id ? { ...v, status: newStatus } : v));
+    if (selectedVendorModal && selectedVendorModal.id === id) {
+      setSelectedVendorModal(prev => ({ ...prev, status: newStatus }));
+    }
+  };
+
+  // Filter vendors based on category and search query
+  const filteredVendors = vendorsList.filter(v => {
+    const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          v.phone.includes(searchQuery) ||
+                          v.category.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = categoryFilter === 'ALL' || v.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  // KPI counters
   const totalCount = vendorsList.length;
   const activeCount = vendorsList.filter(v => v.status === 'ACTIVE').length;
   const pendingCount = vendorsList.filter(v => v.status === 'PENDING').length;
@@ -108,7 +210,7 @@ export default function App() {
   }
 
   // =========================================================
-  // VIEW 2: DESKTOP WORKSPACE WITH SIDEBAR & KPI METRICS
+  // VIEW 2: DESKTOP WORKSPACE WITH VENDOR MODERATION TABLE
   // =========================================================
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#090d16' }}>
@@ -117,7 +219,6 @@ export default function App() {
         {/* 1. FIXED LEFT SIDEBAR */}
         <View style={styles.sidebar}>
           <View>
-            {/* Brand Header */}
             <View style={styles.brandHeader}>
               <View style={styles.brandIconCircle}>
                 <Text style={{ fontSize: 20 }}>🛡️</Text>
@@ -128,13 +229,11 @@ export default function App() {
               </View>
             </View>
 
-            {/* Ward Status Badge */}
             <View style={styles.wardBadge}>
               <View style={styles.greenOnlineDot} />
               <Text style={styles.wardBadgeText}>Ward 104 • Chennai Central</Text>
             </View>
 
-            {/* Navigation Menu */}
             <View style={styles.navMenu}>
               <TouchableOpacity 
                 style={[styles.navItem, activeTab === 'vendors' && styles.navItemActive]}
@@ -177,7 +276,6 @@ export default function App() {
             </View>
           </View>
 
-          {/* Bottom Admin User Info & Logout */}
           <View style={styles.sidebarFooter}>
             <View style={styles.adminAvatar}>
               <Text style={{ fontSize: 16 }}>👨‍💼</Text>
@@ -195,13 +293,13 @@ export default function App() {
           </View>
         </View>
 
-        {/* 2. MAIN DESKTOP CONTENT AREA */}
+        {/* 2. MAIN CONTENT AREA */}
         <View style={styles.mainContent}>
-          {/* Top Desktop App Bar */}
+          {/* Top App Bar */}
           <View style={styles.topAppBar}>
             <View>
-              <Text style={styles.pageTitle}>Municipal Operations & Moderation Center</Text>
-              <Text style={styles.pageSub}>Real-time monitoring of registered street pushcarts and sector activities</Text>
+              <Text style={styles.pageTitle}>Vendor Operations & Moderation Directory</Text>
+              <Text style={styles.pageSub}>Manage verification, approve on-duty pushcarts, and inspect vendor profiles</Text>
             </View>
             <View style={styles.liveSyncPill}>
               <View style={styles.greenOnlineDot} />
@@ -209,7 +307,7 @@ export default function App() {
             </View>
           </View>
 
-          {/* 3. 4 WIDE EXECUTIVE KPI CARDS */}
+          {/* 3. KPI CARDS */}
           <View style={styles.kpiGrid}>
             <View style={styles.kpiCard}>
               <View style={styles.kpiTopRow}>
@@ -248,15 +346,197 @@ export default function App() {
             </View>
           </View>
 
-          {/* Module Placeholder (Ready for Stage 4 Moderation Table) */}
-          <View style={styles.contentPlaceholderCard}>
-            <Text style={{ fontSize: 32, marginBottom: 8 }}>📋</Text>
-            <Text style={styles.placeholderTitle}>Operational Module Skeleton Ready</Text>
-            <Text style={styles.placeholderSub}>
-              Sidebar navigation and KPI metric summaries verified. Stage 4 will mount the full vendor directory moderation table and interactive status controls.
-            </Text>
+          {/* 4. MODERATION WORKSPACE: SEARCH + CATEGORY FILTERS + DATA TABLE */}
+          <View style={styles.tableCard}>
+            {/* Table Filter Header */}
+            <View style={styles.filterBar}>
+              <View style={styles.searchBox}>
+                <Text style={{ fontSize: 14, marginRight: 8 }}>🔍</Text>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search vendor name, phone, or category..."
+                  placeholderTextColor="#64748b"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+              </View>
+
+              {/* Horizontal Category Chips */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+                {CATEGORIES.map((cat, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.categoryPill, categoryFilter === cat && styles.categoryPillActive]}
+                    onPress={() => setCategoryFilter(cat)}
+                  >
+                    <Text style={[styles.categoryPillText, categoryFilter === cat && styles.categoryPillTextActive]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Desktop Data Table */}
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.tableHeadCol, { flex: 2 }]}>VENDOR & SHOP</Text>
+              <Text style={[styles.tableHeadCol, { flex: 1.2 }]}>CATEGORY</Text>
+              <Text style={[styles.tableHeadCol, { flex: 1 }]}>VEHICLE</Text>
+              <Text style={[styles.tableHeadCol, { flex: 1.3 }]}>MOBILE CONTACT</Text>
+              <Text style={[styles.tableHeadCol, { flex: 1 }]}>STATUS</Text>
+              <Text style={[styles.tableHeadCol, { flex: 1.8, textAlign: 'right' }]}>MODERATION ACTIONS</Text>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }}>
+              {filteredVendors.map((vendor) => {
+                const isActive = vendor.status === 'ACTIVE';
+                const isPending = vendor.status === 'PENDING';
+                const isSuspended = vendor.status === 'SUSPENDED';
+
+                return (
+                  <View key={vendor.id} style={styles.tableRow}>
+                    {/* Name */}
+                    <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={styles.vendorAvatar}>
+                        <Text style={{ fontSize: 14 }}>🛒</Text>
+                      </View>
+                      <View style={{ marginLeft: 10 }}>
+                        <Text style={styles.vendorNameText}>{vendor.name}</Text>
+                        <Text style={styles.vendorMetaText}>⭐ {vendor.rating} • {vendor.tripsToday} trips</Text>
+                      </View>
+                    </View>
+
+                    {/* Category */}
+                    <View style={{ flex: 1.2 }}>
+                      <Text style={styles.categoryTag}>{vendor.category}</Text>
+                    </View>
+
+                    {/* Vehicle */}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.vehicleText}>{vendor.vehicle}</Text>
+                    </View>
+
+                    {/* Mobile Contact */}
+                    <View style={{ flex: 1.3 }}>
+                      <Text style={styles.phoneText}>{vendor.phone}</Text>
+                    </View>
+
+                    {/* Status Badge */}
+                    <View style={{ flex: 1 }}>
+                      <View style={[
+                        styles.statusTag,
+                        isActive && styles.statusTagActive,
+                        isPending && styles.statusTagPending,
+                        isSuspended && styles.statusTagSuspended
+                      ]}>
+                        <Text style={[
+                          styles.statusTagText,
+                          isActive && { color: '#10b981' },
+                          isPending && { color: '#f59e0b' },
+                          isSuspended && { color: '#ef4444' }
+                        ]}>
+                          {vendor.status}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Action Controls */}
+                    <View style={{ flex: 1.8, flexDirection: 'row', justifyContent: 'flex-end', gap: 6 }}>
+                      <TouchableOpacity 
+                        style={styles.actionBtnInspect}
+                        onPress={() => setSelectedVendorModal(vendor)}
+                      >
+                        <Text style={styles.actionBtnInspectText}>Inspect 🔍</Text>
+                      </TouchableOpacity>
+
+                      {!isActive ? (
+                        <TouchableOpacity 
+                          style={styles.actionBtnApprove}
+                          onPress={() => toggleVendorStatus(vendor.id, 'ACTIVE')}
+                        >
+                          <Text style={styles.actionBtnApproveText}>Activate ✓</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity 
+                          style={styles.actionBtnSuspend}
+                          onPress={() => toggleVendorStatus(vendor.id, 'SUSPENDED')}
+                        >
+                          <Text style={styles.actionBtnSuspendText}>Suspend ✕</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
+
+        {/* 5. VENDOR INSPECTION MODAL */}
+        {selectedVendorModal && (
+          <Modal transparent visible={!!selectedVendorModal} animationType="fade">
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalCard}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <Text style={styles.modalTitle}>Vendor KYC Verification File</Text>
+                  <TouchableOpacity onPress={() => setSelectedVendorModal(null)}>
+                    <Text style={{ color: '#94a3b8', fontSize: 18, fontWeight: '700' }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.modalGrid}>
+                  <View style={styles.modalInfoBox}>
+                    <Text style={styles.modalLabel}>SHOP / VENDOR NAME</Text>
+                    <Text style={styles.modalVal}>{selectedVendorModal.name}</Text>
+                  </View>
+                  <View style={styles.modalInfoBox}>
+                    <Text style={styles.modalLabel}>CONTACT NUMBER</Text>
+                    <Text style={styles.modalVal}>{selectedVendorModal.phone}</Text>
+                  </View>
+                  <View style={styles.modalInfoBox}>
+                    <Text style={styles.modalLabel}>CATEGORY</Text>
+                    <Text style={styles.modalVal}>{selectedVendorModal.category}</Text>
+                  </View>
+                  <View style={styles.modalInfoBox}>
+                    <Text style={styles.modalLabel}>VEHICLE TYPE</Text>
+                    <Text style={styles.modalVal}>{selectedVendorModal.vehicle}</Text>
+                  </View>
+                  <View style={styles.modalInfoBox}>
+                    <Text style={styles.modalLabel}>REGISTERED DATE</Text>
+                    <Text style={styles.modalVal}>{selectedVendorModal.registeredDate}</Text>
+                  </View>
+                  <View style={styles.modalInfoBox}>
+                    <Text style={styles.modalLabel}>WARD PERMIT STATUS</Text>
+                    <Text style={[styles.modalVal, { color: selectedVendorModal.status === 'ACTIVE' ? '#10b981' : '#f59e0b' }]}>
+                      {selectedVendorModal.status}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, { backgroundColor: '#fee2e2' }]}
+                    onPress={() => {
+                      toggleVendorStatus(selectedVendorModal.id, 'SUSPENDED');
+                      setSelectedVendorModal(null);
+                    }}
+                  >
+                    <Text style={{ color: '#dc2626', fontWeight: '800', fontSize: 12 }}>Suspend Patrol ✕</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, { backgroundColor: '#dcfce7' }]}
+                    onPress={() => {
+                      toggleVendorStatus(selectedVendorModal.id, 'ACTIVE');
+                      setSelectedVendorModal(null);
+                    }}
+                  >
+                    <Text style={{ color: '#059669', fontWeight: '800', fontSize: 12 }}>Approve & Activate ✓</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
 
       </View>
     </SafeAreaProvider>
@@ -517,7 +797,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // MAIN CONTENT AREA
+  // MAIN CONTENT
   mainContent: {
     flex: 1,
     padding: 28,
@@ -593,27 +873,219 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // PLACEHOLDER CARD
-  contentPlaceholderCard: {
+  // DATA TABLE CARD
+  tableCard: {
     backgroundColor: '#131b2e',
     borderRadius: 20,
-    padding: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 20,
     borderWidth: 1,
     borderColor: '#1e293b',
   },
-  placeholderTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 6,
+  filterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+    gap: 14,
   },
-  placeholderSub: {
+  searchBox: {
+    flex: 1,
+    maxWidth: 380,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0b1120',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#ffffff',
     fontSize: 13,
+  },
+  categoryScroll: {
+    flexGrow: 0,
+  },
+  categoryPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#0b1120',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  categoryPillActive: {
+    backgroundColor: '#059669',
+    borderColor: '#10b981',
+  },
+  categoryPillText: {
     color: '#94a3b8',
-    textAlign: 'center',
-    maxWidth: 500,
-    lineHeight: 20,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  categoryPillTextActive: {
+    color: '#ffffff',
+  },
+
+  tableHeaderRow: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: '#0b1120',
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  tableHeadCol: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.5,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  vendorAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#1e293b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vendorNameText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  vendorMetaText: {
+    color: '#64748b',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  categoryTag: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  vehicleText: {
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  phoneText: {
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  statusTag: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#1e293b',
+  },
+  statusTagActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+  },
+  statusTagPending: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  statusTagSuspended: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  statusTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  actionBtnInspect: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  actionBtnInspectText: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  actionBtnApprove: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  actionBtnApproveText: {
+    color: '#10b981',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  actionBtnSuspend: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  actionBtnSuspendText: {
+    color: '#ef4444',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // MODAL
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: '#131b2e',
+    borderRadius: 20,
+    padding: 28,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
+  modalGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  modalInfoBox: {
+    width: '48%',
+    backgroundColor: '#0b1120',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  modalLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94a3b8',
+    marginBottom: 4,
+  },
+  modalVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  modalBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
 });

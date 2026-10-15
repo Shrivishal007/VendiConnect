@@ -7,9 +7,11 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Dimensions,
+  Platform,
   Modal
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 const INITIAL_VENDORS = [
   { 
@@ -98,6 +100,13 @@ const INITIAL_VENDORS = [
   }
 ];
 
+const RECENT_ALERTS = [
+  { id: 101, resident: "Poongodi S. (Flat 4A)", vendor: "Santhosh Poo Kadai", time: "2 mins ago", type: "Stop Request", status: "ACKNOWLEDGED", lat: 13.0830, lng: 80.2710 },
+  { id: 102, resident: "Kavitha R. (Lotus Apt)", vendor: "Muthu Fresh Vegetables", time: "7 mins ago", type: "Price Inquiry", status: "COMPLETED", lat: 13.0845, lng: 80.2740 },
+  { id: 103, resident: "Rajesh M. (Plot 12)", vendor: "Kannan Sea Catch", time: "14 mins ago", type: "Stop Request", status: "ARRIVED", lat: 13.0790, lng: 80.2660 },
+  { id: 104, resident: "Ananya S. (2nd Cross)", vendor: "Amma Tiffin & Kaapi", time: "28 mins ago", type: "Order Alert", status: "COMPLETED", lat: 13.0890, lng: 80.2710 }
+];
+
 const CATEGORIES = ["ALL", "Flowers", "Vegetables", "Fish & Seafood", "Fruits", "Breakfast", "Snacks"];
 
 export default function App() {
@@ -124,7 +133,6 @@ export default function App() {
     setIsAdminLoggedIn(true);
   };
 
-  // Status toggle
   const toggleVendorStatus = (id, newStatus) => {
     setVendorsList(prev => prev.map(v => v.id === id ? { ...v, status: newStatus } : v));
     if (selectedVendorModal && selectedVendorModal.id === id) {
@@ -132,7 +140,6 @@ export default function App() {
     }
   };
 
-  // Filter vendors based on category and search query
   const filteredVendors = vendorsList.filter(v => {
     const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           v.phone.includes(searchQuery) ||
@@ -141,11 +148,66 @@ export default function App() {
     return matchesSearch && matchesCategory;
   });
 
-  // KPI counters
   const totalCount = vendorsList.length;
   const activeCount = vendorsList.filter(v => v.status === 'ACTIVE').length;
   const pendingCount = vendorsList.filter(v => v.status === 'PENDING').length;
   const suspendedCount = vendorsList.filter(v => v.status === 'SUSPENDED').length;
+
+  // HTML map for Fleet Radar
+  const radarHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <style>
+        body { margin: 0; padding: 0; background: #0b1120; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        #map { width: 100vw; height: 100vh; background: #0b1120; }
+        .radar-pulse {
+          width: 14px; height: 14px; border-radius: 50%; background: #10b981;
+          box-shadow: 0 0 0 rgba(16, 185, 129, 0.7);
+          animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+          0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+          70% { box-shadow: 0 0 0 16px rgba(16, 185, 129, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .vendor-pin {
+          background: #131b2e; border: 2px solid #10b981; border-radius: 20px;
+          padding: 4px 8px; color: #fff; font-size: 11px; font-weight: 700;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 4px;
+          white-space: nowrap;
+        }
+      </style>
+    </head>
+    <body>
+      <div id="map"></div>
+      <script>
+        var map = L.map('map', { zoomControl: true }).setView([13.0835, 80.2720], 15);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+          maxZoom: 19,
+          attribution: '© CartoDB'
+        }).addTo(map);
+
+        var vendors = ${JSON.stringify(vendorsList)};
+        vendors.forEach(function(v) {
+          var color = v.status === 'ACTIVE' ? '#10b981' : (v.status === 'PENDING' ? '#f59e0b' : '#ef4444');
+          var icon = L.divIcon({
+            className: 'custom-pin',
+            html: '<div style="background:#131b2e; border:2px solid ' + color + '; border-radius:18px; padding:3px 8px; color:#fff; font-size:11px; font-weight:bold; box-shadow:0 4px 10px rgba(0,0,0,0.4); display:flex; align-items:center; gap:4px;">' +
+                  '<span>' + (v.status === 'ACTIVE' ? '🛒' : '⏸️') + '</span> ' + v.name + '</div>',
+            iconSize: [120, 30],
+            iconAnchor: [60, 15]
+          });
+          L.marker([v.lat, v.lng], { icon: icon }).addTo(map)
+            .bindPopup('<b>' + v.name + '</b><br>' + v.category + ' • ' + v.vehicle + '<br>Status: ' + v.status);
+        });
+      </script>
+    </body>
+    </html>
+  `;
 
   // =========================================================
   // VIEW 1: AUTHENTICATION SCREEN
@@ -210,7 +272,7 @@ export default function App() {
   }
 
   // =========================================================
-  // VIEW 2: DESKTOP WORKSPACE WITH VENDOR MODERATION TABLE
+  // VIEW 2: FULL AUTHENTICATED WORKSPACE WITH TABS
   // =========================================================
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: '#090d16' }}>
@@ -270,7 +332,7 @@ export default function App() {
                   Doorbell Stop Alerts
                 </Text>
                 <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>4</Text>
+                  <Text style={styles.countBadgeText}>{RECENT_ALERTS.length}</Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -298,8 +360,16 @@ export default function App() {
           {/* Top App Bar */}
           <View style={styles.topAppBar}>
             <View>
-              <Text style={styles.pageTitle}>Vendor Operations & Moderation Directory</Text>
-              <Text style={styles.pageSub}>Manage verification, approve on-duty pushcarts, and inspect vendor profiles</Text>
+              <Text style={styles.pageTitle}>
+                {activeTab === 'vendors' && "Vendor Operations & Moderation Directory"}
+                {activeTab === 'radar' && "City Fleet Live Radar Tracking"}
+                {activeTab === 'alerts' && "Doorbell Stop Requests & Resident Alerts Log"}
+              </Text>
+              <Text style={styles.pageSub}>
+                {activeTab === 'vendors' && "Approve on-duty pushcarts, manage verification, and inspect KYC profiles"}
+                {activeTab === 'radar' && "Real-time spatial monitoring of active street vendors across Ward 104"}
+                {activeTab === 'alerts' && "Live feed of resident waves, delivery requests, and arrival confirmations"}
+              </Text>
             </View>
             <View style={styles.liveSyncPill}>
               <View style={styles.greenOnlineDot} />
@@ -346,133 +416,213 @@ export default function App() {
             </View>
           </View>
 
-          {/* 4. MODERATION WORKSPACE: SEARCH + CATEGORY FILTERS + DATA TABLE */}
-          <View style={styles.tableCard}>
-            {/* Table Filter Header */}
-            <View style={styles.filterBar}>
-              <View style={styles.searchBox}>
-                <Text style={{ fontSize: 14, marginRight: 8 }}>🔍</Text>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search vendor name, phone, or category..."
-                  placeholderTextColor="#64748b"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                />
+          {/* 4. TAB 1: VENDOR MODERATION DIRECTORY */}
+          {activeTab === 'vendors' && (
+            <View style={styles.tableCard}>
+              <View style={styles.filterBar}>
+                <View style={styles.searchBox}>
+                  <Text style={{ fontSize: 14, marginRight: 8 }}>🔍</Text>
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search vendor name, phone, or category..."
+                    placeholderTextColor="#64748b"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+                  {CATEGORIES.map((cat, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.categoryPill, categoryFilter === cat && styles.categoryPillActive]}
+                      onPress={() => setCategoryFilter(cat)}
+                    >
+                      <Text style={[styles.categoryPillText, categoryFilter === cat && styles.categoryPillTextActive]}>
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
 
-              {/* Horizontal Category Chips */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-                {CATEGORIES.map((cat, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[styles.categoryPill, categoryFilter === cat && styles.categoryPillActive]}
-                    onPress={() => setCategoryFilter(cat)}
-                  >
-                    <Text style={[styles.categoryPillText, categoryFilter === cat && styles.categoryPillTextActive]}>
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.tableHeadCol, { flex: 2 }]}>VENDOR & SHOP</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1.2 }]}>CATEGORY</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1 }]}>VEHICLE</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1.3 }]}>MOBILE CONTACT</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1 }]}>STATUS</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1.8, textAlign: 'right' }]}>MODERATION ACTIONS</Text>
+              </View>
+
+              <ScrollView style={{ maxHeight: 380 }}>
+                {filteredVendors.map((vendor) => {
+                  const isActive = vendor.status === 'ACTIVE';
+                  const isPending = vendor.status === 'PENDING';
+                  const isSuspended = vendor.status === 'SUSPENDED';
+
+                  return (
+                    <View key={vendor.id} style={styles.tableRow}>
+                      <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={styles.vendorAvatar}>
+                          <Text style={{ fontSize: 14 }}>🛒</Text>
+                        </View>
+                        <View style={{ marginLeft: 10 }}>
+                          <Text style={styles.vendorNameText}>{vendor.name}</Text>
+                          <Text style={styles.vendorMetaText}>⭐ {vendor.rating} • {vendor.tripsToday} trips</Text>
+                        </View>
+                      </View>
+
+                      <View style={{ flex: 1.2 }}>
+                        <Text style={styles.categoryTag}>{vendor.category}</Text>
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.vehicleText}>{vendor.vehicle}</Text>
+                      </View>
+
+                      <View style={{ flex: 1.3 }}>
+                        <Text style={styles.phoneText}>{vendor.phone}</Text>
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <View style={[
+                          styles.statusTag,
+                          isActive && styles.statusTagActive,
+                          isPending && styles.statusTagPending,
+                          isSuspended && styles.statusTagSuspended
+                        ]}>
+                          <Text style={[
+                            styles.statusTagText,
+                            isActive && { color: '#10b981' },
+                            isPending && { color: '#f59e0b' },
+                            isSuspended && { color: '#ef4444' }
+                          ]}>
+                            {vendor.status}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={{ flex: 1.8, flexDirection: 'row', justifyContent: 'flex-end', gap: 6 }}>
+                        <TouchableOpacity 
+                          style={styles.actionBtnInspect}
+                          onPress={() => setSelectedVendorModal(vendor)}
+                        >
+                          <Text style={styles.actionBtnInspectText}>Inspect 🔍</Text>
+                        </TouchableOpacity>
+
+                        {!isActive ? (
+                          <TouchableOpacity 
+                            style={styles.actionBtnApprove}
+                            onPress={() => toggleVendorStatus(vendor.id, 'ACTIVE')}
+                          >
+                            <Text style={styles.actionBtnApproveText}>Activate ✓</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity 
+                            style={styles.actionBtnSuspend}
+                            onPress={() => toggleVendorStatus(vendor.id, 'SUSPENDED')}
+                          >
+                            <Text style={styles.actionBtnSuspendText}>Suspend ✕</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* 5. TAB 2: FLEET RADAR MAP */}
+          {activeTab === 'radar' && (
+            <View style={styles.radarCard}>
+              <View style={styles.radarHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 16, marginRight: 8 }}>🛰️</Text>
+                  <Text style={styles.radarTitle}>Live CartoDB Fleet Spatial Map</Text>
+                </View>
+                <View style={styles.radarLegend}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
+                    <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
+                    <Text style={styles.legendText}>Active ({activeCount})</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12 }}>
+                    <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
+                    <Text style={styles.legendText}>Pending ({pendingCount})</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={[styles.legendDot, { backgroundColor: '#ef4444' }]} />
+                    <Text style={styles.legendText}>Suspended ({suspendedCount})</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.radarMapBox}>
+                {Platform.OS === 'web' ? (
+                  <iframe 
+                    srcDoc={radarHtml}
+                    style={{ width: '100%', height: 420, border: 'none', borderRadius: 14 }}
+                    title="Fleet Radar"
+                  />
+                ) : (
+                  <WebView 
+                    source={{ html: radarHtml }} 
+                    style={{ flex: 1, height: 420, borderRadius: 14 }}
+                  />
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* 6. TAB 3: DOORBELL STOP ALERTS LOG */}
+          {activeTab === 'alerts' && (
+            <View style={styles.tableCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '800' }}>🔔 Recent Doorbell Stops</Text>
+                <Text style={{ color: '#94a3b8', fontSize: 12 }}>Live Dispatch Stream</Text>
+              </View>
+
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.tableHeadCol, { flex: 2 }]}>RESIDENT / ADDRESS</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1.5 }]}>TARGET VENDOR</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1 }]}>TIME</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1.2 }]}>REQUEST TYPE</Text>
+                <Text style={[styles.tableHeadCol, { flex: 1, textAlign: 'right' }]}>DISPATCH STATE</Text>
+              </View>
+
+              <ScrollView style={{ maxHeight: 380 }}>
+                {RECENT_ALERTS.map((alert) => (
+                  <View key={alert.id} style={styles.tableRow}>
+                    <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 18, marginRight: 10 }}>🏠</Text>
+                      <View>
+                        <Text style={styles.vendorNameText}>{alert.resident}</Text>
+                        <Text style={styles.vendorMetaText}>Gate coordinates locked</Text>
+                      </View>
+                    </View>
+                    <View style={{ flex: 1.5 }}>
+                      <Text style={styles.categoryTag}>{alert.vendor}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.phoneText}>{alert.time}</Text>
+                    </View>
+                    <View style={{ flex: 1.2 }}>
+                      <Text style={styles.vehicleText}>{alert.type}</Text>
+                    </View>
+                    <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                      <View style={[styles.statusTag, styles.statusTagActive]}>
+                        <Text style={[styles.statusTagText, { color: '#10b981' }]}>{alert.status}</Text>
+                      </View>
+                    </View>
+                  </View>
                 ))}
               </ScrollView>
             </View>
-
-            {/* Desktop Data Table */}
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.tableHeadCol, { flex: 2 }]}>VENDOR & SHOP</Text>
-              <Text style={[styles.tableHeadCol, { flex: 1.2 }]}>CATEGORY</Text>
-              <Text style={[styles.tableHeadCol, { flex: 1 }]}>VEHICLE</Text>
-              <Text style={[styles.tableHeadCol, { flex: 1.3 }]}>MOBILE CONTACT</Text>
-              <Text style={[styles.tableHeadCol, { flex: 1 }]}>STATUS</Text>
-              <Text style={[styles.tableHeadCol, { flex: 1.8, textAlign: 'right' }]}>MODERATION ACTIONS</Text>
-            </View>
-
-            <ScrollView style={{ maxHeight: 380 }}>
-              {filteredVendors.map((vendor) => {
-                const isActive = vendor.status === 'ACTIVE';
-                const isPending = vendor.status === 'PENDING';
-                const isSuspended = vendor.status === 'SUSPENDED';
-
-                return (
-                  <View key={vendor.id} style={styles.tableRow}>
-                    {/* Name */}
-                    <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={styles.vendorAvatar}>
-                        <Text style={{ fontSize: 14 }}>🛒</Text>
-                      </View>
-                      <View style={{ marginLeft: 10 }}>
-                        <Text style={styles.vendorNameText}>{vendor.name}</Text>
-                        <Text style={styles.vendorMetaText}>⭐ {vendor.rating} • {vendor.tripsToday} trips</Text>
-                      </View>
-                    </View>
-
-                    {/* Category */}
-                    <View style={{ flex: 1.2 }}>
-                      <Text style={styles.categoryTag}>{vendor.category}</Text>
-                    </View>
-
-                    {/* Vehicle */}
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.vehicleText}>{vendor.vehicle}</Text>
-                    </View>
-
-                    {/* Mobile Contact */}
-                    <View style={{ flex: 1.3 }}>
-                      <Text style={styles.phoneText}>{vendor.phone}</Text>
-                    </View>
-
-                    {/* Status Badge */}
-                    <View style={{ flex: 1 }}>
-                      <View style={[
-                        styles.statusTag,
-                        isActive && styles.statusTagActive,
-                        isPending && styles.statusTagPending,
-                        isSuspended && styles.statusTagSuspended
-                      ]}>
-                        <Text style={[
-                          styles.statusTagText,
-                          isActive && { color: '#10b981' },
-                          isPending && { color: '#f59e0b' },
-                          isSuspended && { color: '#ef4444' }
-                        ]}>
-                          {vendor.status}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Action Controls */}
-                    <View style={{ flex: 1.8, flexDirection: 'row', justifyContent: 'flex-end', gap: 6 }}>
-                      <TouchableOpacity 
-                        style={styles.actionBtnInspect}
-                        onPress={() => setSelectedVendorModal(vendor)}
-                      >
-                        <Text style={styles.actionBtnInspectText}>Inspect 🔍</Text>
-                      </TouchableOpacity>
-
-                      {!isActive ? (
-                        <TouchableOpacity 
-                          style={styles.actionBtnApprove}
-                          onPress={() => toggleVendorStatus(vendor.id, 'ACTIVE')}
-                        >
-                          <Text style={styles.actionBtnApproveText}>Activate ✓</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity 
-                          style={styles.actionBtnSuspend}
-                          onPress={() => toggleVendorStatus(vendor.id, 'SUSPENDED')}
-                        >
-                          <Text style={styles.actionBtnSuspendText}>Suspend ✕</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
+          )}
         </View>
 
-        {/* 5. VENDOR INSPECTION MODAL */}
+        {/* 7. VENDOR INSPECTION MODAL */}
         {selectedVendorModal && (
           <Modal transparent visible={!!selectedVendorModal} animationType="fade">
             <View style={styles.modalBackdrop}>
@@ -1035,6 +1185,48 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontSize: 11,
     fontWeight: '800',
+  },
+
+  // RADAR CARD
+  radarCard: {
+    backgroundColor: '#131b2e',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  radarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  radarTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  radarLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  radarMapBox: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    height: 420,
   },
 
   // MODAL

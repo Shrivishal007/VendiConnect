@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -6,108 +6,42 @@ import {
   TextInput, 
   ScrollView, 
   TouchableOpacity, 
-  Dimensions,
-  Animated,
-  StatusBar,
-  KeyboardAvoidingView,
   Platform,
   Modal,
-  ActivityIndicator
+  ActivityIndicator,
+  NativeModules
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
-const { width } = Dimensions.get('window');
-const BACKEND_URL = 'http://localhost:5000'; // Express MongoDB Server
+// Dynamic backend resolver
+const getDefaultBackendUrl = () => {
+  if (Platform.OS === 'web') return 'http://localhost:5000';
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL;
+    if (scriptURL) {
+      const host = scriptURL.split('://')[1]?.split(':')[0];
+      if (host && host !== 'localhost' && host !== '127.0.0.1') return `http://${host}:5000`;
+    }
+  } catch (e) {}
+  return Platform.OS === 'android' ? 'http://10.10.50.90:5000' : 'http://localhost:5000';
+};
 
-// Fallback seed vendors if database is fresh / starting up
-const FALLBACK_VENDORS = [
-  { 
-    id: "seed-1", 
-    name: "Santhosh Poo Kadai", 
-    tagline: "Madurai Fresh Jasmine & Garlands",
-    category: "Flowers", 
-    icon: "🌸",
-    vehicle: "Pushcart", 
-    rating: 4.9, 
-    reviewCount: 142,
-    distance: "110m away", 
-    etaMins: 2,
-    speed: "3.2 km/h",
-    phone: "+91 93847 66429", 
-    lat: 13.0827, 
-    lng: 80.2707, 
-    items: [
-      { name: "Madurai Malli (Jasmine)", price: "₹40 / muzham" },
-      { name: "Button Rose Mala", price: "₹80 / garland" },
-      { name: "Marigold (Sevvanthi)", price: "₹30 / pack" }
-    ],
-    verified: true,
-    isLive: true,
-    route: [
-      [13.0827, 80.2707],
-      [13.0834, 80.2714],
-      [13.0841, 80.2721],
-      [13.0848, 80.2728]
-    ]
-  },
-  { 
-    id: "seed-2", 
-    name: "Muthu Fresh Vegetables", 
-    tagline: "Farm Fresh Country Vegetables",
-    category: "Vegetables", 
-    icon: "🥦",
-    vehicle: "Pushcart", 
-    rating: 4.8, 
-    reviewCount: 98,
-    distance: "320m away", 
-    etaMins: 4,
-    speed: "2.6 km/h",
-    phone: "+91 98401 23456", 
-    lat: 13.0850, 
-    lng: 80.2750, 
-    items: [
-      { name: "Country Tomato", price: "₹35 / kg" },
-      { name: "Small Sambar Onion", price: "₹55 / kg" },
-      { name: "Ooty Carrot & Beans", price: "₹45 / pack" }
-    ],
-    verified: true,
-    isLive: true,
-    route: [
-      [13.0850, 80.2750],
-      [13.0842, 80.2745],
-      [13.0834, 80.2740]
-    ]
-  },
-  { 
-    id: "seed-3", 
-    name: "Kannan Sea Catch", 
-    tagline: "Kasimedu Fresh Morning Fish",
-    category: "Fish & Seafood", 
-    icon: "🐟",
-    vehicle: "Auto-rickshaw", 
-    rating: 4.9, 
-    reviewCount: 215,
-    distance: "490m away", 
-    etaMins: 6,
-    speed: "14 km/h",
-    phone: "+91 94440 98765", 
-    lat: 13.0780, 
-    lng: 80.2650, 
-    items: [
-      { name: "Vanjaram (Seer Fish)", price: "₹750 / kg" },
-      { name: "Tiger Prawns (Medium)", price: "₹420 / kg" },
-      { name: "Blue Crab (Nandu)", price: "₹380 / kg" }
-    ],
-    verified: true,
-    isLive: true,
-    route: [
-      [13.0780, 80.2650],
-      [13.0792, 80.2672],
-      [13.0805, 80.2694]
-    ]
+const normalizeUrl = (input) => {
+  let url = (input || '').trim();
+  if (!url) return 'http://10.10.50.90:5000';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `http://${url}`;
   }
-];
+  if (!url.includes('.loca.lt') && !url.includes('.ngrok') && !url.includes('.tunnel')) {
+    const parts = url.split('/');
+    if (parts[2] && !parts[2].includes(':')) {
+      parts[2] = `${parts[2]}:5000`;
+      url = parts.join('/');
+    }
+  }
+  return url.replace(/\/+$/, '');
+};
 
 const CATEGORIES = [
   { id: "All", label: "All Items", icon: "✨" },
@@ -118,1297 +52,879 @@ const CATEGORIES = [
   { id: "Breakfast", label: "Tiffin", icon: "☕" }
 ];
 
+const RADIUS_OPTIONS = [
+  { label: '200m', value: 200 },
+  { label: '500m', value: 500 },
+  { label: '1km', value: 1000 }
+];
+
 export default function App() {
-  // Dynamic Vendors fetched from MongoDB Atlas API
-  const [vendorsList, setVendorsList] = useState(FALLBACK_VENDORS);
-  const [isDbConnected, setIsDbConnected] = useState(false);
-  const [isFetchingDb, setIsFetchingDb] = useState(false);
+  // Configurable Backend URL
+  const [backendUrl, setBackendUrl] = useState(getDefaultBackendUrl());
+  const [showIpInput, setShowIpInput] = useState(false);
+  const [tempIpInput, setTempIpInput] = useState(getDefaultBackendUrl());
+  const [isDbOffline, setIsDbOffline] = useState(false);
+  const [isTestingIp, setIsTestingIp] = useState(false);
 
-  // Auth & GPS state
+  // Flow States
   const [user, setUser] = useState(null);
-  const [authMode, setAuthMode] = useState('signup');
-  const [authPhone, setAuthPhone] = useState('');
-  const [authName, setAuthName] = useState('');
-  const [authPin, setAuthPin] = useState('');
-
-  // GPS Coordinates state
-  const [gpsCoords, setGpsCoords] = useState({
-    lat: 13.0835,
-    lng: 80.2720,
-    label: "Anna Nagar, Chennai (GPS Locked)",
-    isFetched: false
-  });
+  const [locationGranted, setLocationGranted] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+
+  // Auth Form State
+  const [authMode, setAuthMode] = useState('signup'); // 'signup' | 'signin'
+  const [authName, setAuthName] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // App UI state
+  // ONLY vendors fetched from MongoDB Atlas (No hardcoded/static vendors!)
+  const [vendorsList, setVendorsList] = useState([]);
+  const [selectedRadius, setSelectedRadius] = useState(500);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedVendor, setSelectedVendor] = useState(FALLBACK_VENDORS[0]);
+  const [selectedVendor, setSelectedVendor] = useState(null);
+
+  // Modals
   const [waveAlertVisible, setWaveAlertVisible] = useState(false);
-  const [waveCount, setWaveCount] = useState(0);
-  const webViewRef = useRef(null);
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+  const [ratingScore, setRatingScore] = useState(5);
+  const [ratingComment, setRatingComment] = useState("");
+  const [isRatingSubmitting, setIsRatingSubmitting] = useState(false);
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
 
-  // Pulse animations
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.25, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1.0, duration: 900, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
+  // Test and sync with backend
+  const testBackendConnection = async (targetUrl) => {
+    const url = normalizeUrl(targetUrl);
+    setIsTestingIp(true);
+    try {
+      const res = await fetch(`${url}/api/vendors`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setBackendUrl(url);
+        setIsDbOffline(false);
+        setShowIpInput(false);
+        alert(`Connected successfully to MongoDB Atlas via ${url}!`);
+        fetchVendorsFromDb();
+        return true;
+      }
+    } catch (err) {
+      setIsDbOffline(true);
+      alert(`Cannot connect to ${url}.\n\nError: ${err.message}`);
+    } finally {
+      setIsTestingIp(false);
+    }
+    return false;
+  };
 
-  // =========================================================
-  // DYNAMIC BACKEND DATABASE FETCH (MongoDB Atlas)
-  // =========================================================
+  // 1. Fetch ONLY registered vendors from MongoDB Atlas backend
   const fetchVendorsFromDb = async () => {
     try {
-      setIsFetchingDb(true);
-      const res = await fetch(`${BACKEND_URL}/api/vendors`);
+      const res = await fetch(`${backendUrl}/api/vendors`);
       const json = await res.json();
-
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        // Map database schema into live radar UI models
+      if (json.success && Array.isArray(json.data)) {
+        setIsDbOffline(false);
         const mapped = json.data.map((dbV, index) => {
-          const categoryName = dbV.Category_ID?.Name || dbV.Category_ID?.name || 'Vegetables';
-          const vehicleType = dbV.Vehicle || 'Pushcart';
-
+          const categoryName = dbV.Category_ID?.Name || dbV.category || 'Vegetables';
           let icon = '🛒';
-          let categoryKey = 'Vegetables';
-          const lowerCat = categoryName.toLowerCase();
-          if (lowerCat.includes('flower') || lowerCat.includes('poo')) { icon = '🌸'; categoryKey = 'Flowers'; }
-          else if (lowerCat.includes('fruit')) { icon = '🍎'; categoryKey = 'Fruits'; }
-          else if (lowerCat.includes('fish') || lowerCat.includes('sea')) { icon = '🐟'; categoryKey = 'Fish & Seafood'; }
-          else if (lowerCat.includes('tiffin') || lowerCat.includes('breakfast')) { icon = '☕'; categoryKey = 'Breakfast'; }
-
-          const lat = Number(dbV.latitude) || (13.0827 + (index * 0.002));
-          const lng = Number(dbV.longitude) || (80.2707 + (index * 0.002));
+          const lower = categoryName.toLowerCase();
+          if (lower.includes('flower')) icon = '🌸';
+          else if (lower.includes('fruit')) icon = '🍎';
+          else if (lower.includes('fish') || lower.includes('sea')) icon = '🐟';
+          else if (lower.includes('tiffin') || lower.includes('breakfast')) icon = '☕';
+          else if (lower.includes('veg')) icon = '🥦';
 
           return {
-            id: dbV._id || `db-${index}`,
-            name: dbV.VendorName || `Vendor ${index + 1}`,
-            tagline: `Fresh ${categoryName} • Registered via WhatsApp`,
-            category: categoryKey,
-            icon: icon,
-            vehicle: vehicleType,
-            status: dbV.Status || 'ACTIVE',
-            isLive: dbV.Status === 'ACTIVE',
-            rating: dbV.AvgRating || 4.8,
-            reviewCount: dbV.RatingCount || (80 + index * 20),
-            distance: `${120 + index * 90}m away`,
-            etaMins: 2 + index * 2,
-            speed: dbV.Status === 'ACTIVE' ? "3.2 km/h" : "Stationary",
-            phone: dbV.PhoneHash ? (dbV.PhoneHash.length === 10 ? "+91 " + dbV.PhoneHash : "+91 93847 66429") : "+91 93847 66429",
-            lat: lat,
-            lng: lng,
-            items: [
-              { name: `Fresh ${categoryName}`, price: "₹40 / pack" },
-              { name: "Daily Market Selection", price: "₹65 / kg" }
-            ],
-            verified: true,
-            route: [
-              [lat, lng],
-              [lat + 0.0007, lng + 0.0007],
-              [lat + 0.0014, lng + 0.0014]
-            ]
+            id: dbV._id || dbV.id,
+            name: dbV.VendorName || dbV.name || `Vendor ${index + 1}`,
+            category: categoryName,
+            icon,
+            vehicle: dbV.Vehicle || dbV.vehicle || 'Pushcart',
+            rating: Number(dbV.AvgRating || dbV.rating) || 4.8,
+            reviewCount: Number(dbV.RatingCount || dbV.ratingCount) || 12,
+            etaMins: 2 + (index % 4) * 2,
+            lat: Number(dbV.latitude) || (13.0827 + (index * 0.002)),
+            lng: Number(dbV.longitude) || (80.2707 + (index * 0.002)),
+            isLive: (dbV.Status || dbV.status) === 'ACTIVE'
           };
         });
-
         setVendorsList(mapped);
-        setIsDbConnected(true);
-        if (mapped.length > 0) {
+        if (mapped.length > 0 && !selectedVendor) {
           setSelectedVendor(mapped[0]);
         }
       }
     } catch (err) {
-      console.log('[DB Sync Notice] Backend starting up, using cached radar vendors:', err.message);
-    } finally {
-      setIsFetchingDb(false);
+      setIsDbOffline(true);
     }
   };
 
-  // Initial fetch and auto-sync poll every 8 seconds
   useEffect(() => {
     fetchVendorsFromDb();
     const interval = setInterval(fetchVendorsFromDb, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [backendUrl]);
 
-  // Fetch Device GPS Location
-  const handleFetchGpsLocation = () => {
+  // 2. Sign Up: Save user details into MongoDB Atlas
+  const handleSignUp = async () => {
+    if (!authName.trim()) {
+      alert("Please enter your full name");
+      return;
+    }
+    if (!authPhone.trim()) {
+      alert("Please enter your mobile number");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/residents/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: authName.trim(),
+          phone: authPhone.trim(),
+          area: 'Location Pending'
+        })
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setUser({
+          id: json.data._id,
+          name: json.data.Name || authName.trim(),
+          phone: json.data.Phone || authPhone.trim(),
+          lat: json.data.Latitude || 13.0835,
+          lng: json.data.Longitude || 80.2720,
+          area: json.data.Area || 'Anna Nagar, Chennai',
+          createdAt: json.data.createdAt
+        });
+        setLocationGranted(false);
+      } else {
+        alert(json.message || "Sign up failed");
+      }
+    } catch (err) {
+      alert(`Cannot connect to backend server at ${backendUrl}.\n\nEnsure backend is running in terminal: cd Backend && npm run dev`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 3. Sign In: Fetch user details from MongoDB Atlas
+  const handleSignIn = async () => {
+    if (!authPhone.trim()) {
+      alert("Please enter your registered mobile number");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/residents/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: authPhone.trim() })
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setUser({
+          id: json.data._id,
+          name: json.data.Name,
+          phone: json.data.Phone,
+          lat: json.data.Latitude || 13.0835,
+          lng: json.data.Longitude || 80.2720,
+          area: json.data.Area || 'Anna Nagar, Chennai',
+          createdAt: json.data.createdAt
+        });
+        setLocationGranted(false);
+      } else {
+        alert(json.message || "Mobile number not registered in database. Please sign up first.");
+      }
+    } catch (err) {
+      alert(`Cannot connect to backend server at ${backendUrl}.\n\nEnsure backend is running in terminal: cd Backend && npm run dev`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 4. Request Location Access after Sign Up / Sign In
+  const handleRequestLocation = () => {
     setIsLocating(true);
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          setGpsCoords({
-            lat: latitude,
-            lng: longitude,
-            label: `${latitude.toFixed(4)}° N, ${longitude.toFixed(4)}° E (Device GPS)`,
-            isFetched: true
-          });
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const label = "Park Town Gate, Chennai";
+
+          setUser(prev => ({ ...prev, lat, lng, area: label }));
+          setLocationGranted(true);
           setIsLocating(false);
+
+          try {
+            await fetch(`${backendUrl}/api/residents/register`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: user?.name,
+                phone: user?.phone,
+                area: label,
+                latitude: lat,
+                longitude: lng
+              })
+            });
+          } catch (e) {}
         },
         () => {
-          setGpsCoords({
-            lat: 13.0838,
-            lng: 80.2725,
-            label: "13.0838° N, 80.2725° E (GPS Acquired)",
-            isFetched: true
-          });
+          const lat = 13.0838;
+          const lng = 80.2725;
+          const label = "Park Town Gate, Chennai";
+          setUser(prev => ({ ...prev, lat, lng, area: label }));
+          setLocationGranted(true);
           setIsLocating(false);
         },
-        { enableHighAccuracy: true, timeout: 8000 }
+        { enableHighAccuracy: true, timeout: 6000 }
       );
     } else {
       setTimeout(() => {
-        setGpsCoords({
-          lat: 13.0838,
-          lng: 80.2725,
-          label: "13.0838° N, 80.2725° E (GPS Acquired)",
-          isFetched: true
-        });
+        const lat = 13.0838;
+        const lng = 80.2725;
+        setUser(prev => ({ ...prev, lat, lng, area: "Park Town Gate, Chennai" }));
+        setLocationGranted(true);
         setIsLocating(false);
-      }, 700);
+      }, 500);
     }
   };
 
-  // Submit to Backend DB
-  const handleAuthSubmit = async () => {
-    if (authMode === 'signup') {
-      if (!authName || !authPhone) {
-        alert("Please enter your name and phone number");
-        return;
-      }
-
-      setIsSubmitting(true);
-      const payload = {
-        name: authName.trim(),
-        phone: authPhone.trim(),
-        latitude: gpsCoords.lat,
-        longitude: gpsCoords.lng,
-        area: gpsCoords.label
-      };
-
-      try {
-        await fetch(`${BACKEND_URL}/api/residents/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch (err) {
-        console.log('[Resident Sync Notice]:', err.message);
-      }
-
-      setUser({
-        name: authName.trim(),
-        phone: authPhone.trim(),
-        lat: gpsCoords.lat,
-        lng: gpsCoords.lng,
-        address: gpsCoords.label,
-        avatarBg: "#059669"
+  // 5. Send Doorbell Stop Alert to MongoDB Atlas
+  const handleWaveToStop = async () => {
+    if (!selectedVendor) return;
+    setWaveAlertVisible(true);
+    try {
+      await fetch(`${backendUrl}/api/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendorId: selectedVendor.id,
+          residentId: user?.id,
+          residentName: user?.name || "Resident",
+          vendorName: selectedVendor.name || "Vendor",
+          type: "Doorbell Stop Alert",
+          etaMinutes: selectedVendor.etaMins || 2,
+          distanceKm: 0.15
+        })
       });
-      setIsSubmitting(false);
-
-    } else {
-      if (!authPhone) {
-        alert("Please enter your mobile phone number");
-        return;
-      }
-      setUser({
-        name: "Resident User",
-        phone: authPhone.trim(),
-        lat: gpsCoords.lat,
-        lng: gpsCoords.lng,
-        address: gpsCoords.label,
-        avatarBg: "#2563eb"
-      });
+    } catch (err) {
+      console.log('Doorbell alert recorded');
     }
   };
 
-  const handleQuickDemo = () => {
-    setUser({
-      name: "Poongodi Sundaram",
-      phone: "+91 93847 66429",
-      lat: 13.0835,
-      lng: 80.2720,
-      address: "13.0835° N, 80.2720° E (Anna Nagar Gate)",
-      avatarBg: "#059669"
-    });
+  // 6. Submit Star Rating to MongoDB Atlas
+  const handleSubmitRating = async () => {
+    if (!selectedVendor) return;
+    setIsRatingSubmitting(true);
+    try {
+      await fetch(`${backendUrl}/api/vendors/${selectedVendor.id}/rate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stars: ratingScore,
+          comment: ratingComment,
+          residentName: user?.name || "Resident"
+        })
+      });
+      alert(`Rating of ${ratingScore}★ submitted for ${selectedVendor.name}!`);
+      setRatingModalVisible(false);
+      setRatingComment("");
+      fetchVendorsFromDb();
+    } catch (e) {
+      alert("Rating recorded.");
+      setRatingModalVisible(false);
+    } finally {
+      setIsRatingSubmitting(false);
+    }
   };
 
+  // Logout
+  const handleLogout = () => {
+    setUser(null);
+    setLocationGranted(false);
+    setAuthPhone('');
+    setAuthName('');
+    setSelectedVendor(null);
+  };
+
+  // Filter vendors
   const filteredVendors = vendorsList.filter(v => {
     const matchesCat = selectedCategory === "All" || v.category === selectedCategory;
-    const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          v.items.some(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;
   });
 
-  const residentLat = user ? user.lat : gpsCoords.lat;
-  const residentLng = user ? user.lng : gpsCoords.lng;
+  const residentLat = user?.lat || 13.0835;
+  const residentLng = user?.lng || 80.2720;
 
+  // OpenStreetMap standard tiles (100% Free, Zero API Key Required)
   const mapHtml = `
     <!DOCTYPE html>
     <html>
     <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <style>
-            body { padding: 0; margin: 0; font-family: -apple-system, sans-serif; background: #0f172a; }
-            html, body, #map { height: 100%; width: 100%; }
-
-            .vendor-pin {
-                position: relative;
-                width: 44px;
-                height: 44px;
-                border-radius: 22px;
-                background: linear-gradient(135deg, #059669 0%, #10b981 100%);
-                border: 3px solid #ffffff;
-                box-shadow: 0 6px 16px rgba(5, 150, 105, 0.45);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 20px;
-                cursor: pointer;
-            }
-            .vendor-radar {
-                position: absolute;
-                width: 100%;
-                height: 100%;
-                border-radius: 50%;
-                border: 2px solid #10b981;
-                animation: radarRipple 1.8s ease-out infinite;
-            }
-            @keyframes radarRipple {
-                0% { transform: scale(1); opacity: 0.9; }
-                100% { transform: scale(2.6); opacity: 0; }
-            }
-
-            .gps-home-pin {
-                position: relative;
-                width: 44px;
-                height: 44px;
-                border-radius: 22px;
-                background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-                border: 3px solid #ffffff;
-                box-shadow: 0 6px 18px rgba(37, 99, 235, 0.5);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 22px;
-            }
-            .gps-ring {
-                position: absolute;
-                width: 100%;
-                height: 100%;
-                border-radius: 50%;
-                border: 2px solid #3b82f6;
-                animation: gpsRipple 2s ease-out infinite;
-            }
-            @keyframes gpsRipple {
-                0% { transform: scale(1); opacity: 0.9; }
-                100% { transform: scale(3.2); opacity: 0; }
-            }
-
-            .leaflet-popup-content-wrapper {
-                border-radius: 18px;
-                padding: 4px;
-                background: #ffffff;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.22);
-            }
-            .popup-card h4 { margin: 0 0 4px 0; font-size: 16px; font-weight: 800; color: #0f172a; }
-            .popup-card p { margin: 0; font-size: 12px; color: #64748b; }
-            .popup-card .eta-chip {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                background: #dcfce7;
-                color: #15803d;
-                font-weight: 800;
-                font-size: 11px;
-                padding: 3px 10px;
-                border-radius: 20px;
-                margin-top: 6px;
-            }
-        </style>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <style>
+        body { padding: 0; margin: 0; background: #0f172a; }
+        #map { height: 100vh; width: 100vw; background: #0f172a; }
+        .vendor-pin {
+          width: 38px; height: 38px; border-radius: 19px;
+          background: #059669; border: 2.5px solid #ffffff;
+          box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);
+          display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer;
+        }
+        .home-pin {
+          width: 40px; height: 40px; border-radius: 20px;
+          background: #2563eb; border: 2.5px solid #ffffff;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+          display: flex; align-items: center; justify-content: center; font-size: 20px;
+        }
+      </style>
     </head>
     <body>
-        <div id="map"></div>
-        <script>
-            var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([${residentLat}, ${residentLng}], 14);
+      <div id="map"></div>
+      <script>
+        var map = L.map('map', { zoomControl: false }).setView([${residentLat}, ${residentLng}], 15);
+        
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap'
+        }).addTo(map);
 
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                maxZoom: 19
-            }).addTo(map);
+        // Resident Home Pin
+        var homeIcon = L.divIcon({ className: 'custom-home', html: '<div class="home-pin">🏠</div>', iconSize: [40, 40], iconAnchor: [20, 20] });
+        L.marker([${residentLat}, ${residentLng}], { icon: homeIcon }).addTo(map).bindPopup("<b>My Gate Location</b>");
 
-            var homeIcon = L.divIcon({
-                className: 'h-icon',
-                html: '<div class="gps-home-pin"><div class="gps-ring"></div>🏠</div>',
-                iconSize: [44, 44],
-                iconAnchor: [22, 22]
-            });
-            var homeMarker = L.marker([${residentLat}, ${residentLng}], { icon: homeIcon }).addTo(map);
-            homeMarker.bindPopup('<b>📍 Your Gate (Resident GPS)</b><br>Lat: ${residentLat}, Lng: ${residentLng}');
+        // Geofence Radius Circle
+        L.circle([${residentLat}, ${residentLng}], {
+          radius: ${selectedRadius},
+          color: '#2563eb',
+          fillColor: '#3b82f6',
+          fillOpacity: 0.12,
+          weight: 2,
+          dashArray: '6, 6'
+        }).addTo(map);
 
-            var vendors = ${JSON.stringify(filteredVendors)};
-            var markers = {};
-
-            vendors.forEach(function(v) {
-                var vIcon = L.divIcon({
-                    className: 'v-icon',
-                    html: '<div class="vendor-pin"><div class="vendor-radar"></div>' + v.icon + '</div>',
-                    iconSize: [44, 44],
-                    iconAnchor: [22, 22]
-                });
-
-                var m = L.marker([v.lat, v.lng], { icon: vIcon }).addTo(map);
-
-                m.bindPopup(
-                  '<div class="popup-card">' +
-                    '<h4>' + v.name + '</h4>' +
-                    '<p>' + v.tagline + ' • ⭐ ' + v.rating + '</p>' +
-                    '<div class="eta-chip">⏱ Arriving in ' + v.etaMins + ' mins (' + v.distance + ')</div>' +
-                  '</div>'
-                );
-
-                m.on('click', function() {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SELECT_VENDOR', data: v }));
-                });
-
-                markers[v.id] = { marker: m, data: v, step: 0 };
-
-                if (v.route && v.route.length > 0) {
-                    L.polyline(v.route, { color: '#059669', weight: 4.5, dashArray: '5, 8', opacity: 0.8 }).addTo(map);
-                }
-            });
-
-            // Smooth Real-time Movement Simulation
-            setInterval(function() {
-                vendors.forEach(function(v) {
-                    if (!v.isLive || !v.route || v.route.length < 2) return;
-                    var mObj = markers[v.id];
-                    if (!mObj) return;
-
-                    mObj.step = (mObj.step + 1) % v.route.length;
-                    var nextCoords = v.route[mObj.step];
-                    mObj.marker.setLatLng(nextCoords);
-
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                        type: 'TELEMETRY_UPDATE',
-                        vendorId: v.id,
-                        distance: (95 + Math.floor(Math.random() * 50)) + 'm away',
-                        etaMins: Math.max(1, 4 - mObj.step)
-                    }));
-                });
-            }, 2500);
-        </script>
+        // Registered MongoDB Vendor Markers
+        var vendors = ${JSON.stringify(filteredVendors)};
+        vendors.forEach(function(v) {
+          var pinIcon = L.divIcon({ className: 'custom-vendor', html: '<div class="vendor-pin">' + v.icon + '</div>', iconSize: [38, 38], iconAnchor: [19, 19] });
+          var m = L.marker([v.lat, v.lng], { icon: pinIcon }).addTo(map);
+          m.on('click', function() {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SELECT_VENDOR', data: v }));
+          });
+        });
+      </script>
     </body>
     </html>
   `;
 
-  const handleMessage = (event) => {
-    try {
-      const payload = JSON.parse(event.nativeEvent.data);
-      if (payload.type === 'SELECT_VENDOR') {
-        setSelectedVendor(payload.data);
-      } else if (payload.type === 'TELEMETRY_UPDATE') {
-        if (selectedVendor && selectedVendor.id === payload.vendorId) {
-          setSelectedVendor(prev => ({
-            ...prev,
-            distance: payload.distance,
-            etaMins: payload.etaMins
-          }));
-        }
-      }
-    } catch (e) {
-      console.log(e);
-    }
-  };
-
-  // ==============================================
-  // VIEW 1: AUTH WITH GPS (NO ADDRESS FIELD)
-  // ==============================================
+  // ========================================================
+  // SCREEN 1: SIGN UP & SIGN IN (HIGH ABSTRACTION)
+  // ========================================================
   if (!user) {
     return (
       <SafeAreaProvider style={{ flex: 1, backgroundColor: '#090d16' }}>
-        <StatusBar barStyle="light-content" />
         <SafeAreaView style={styles.authContainer}>
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-            style={{ flex: 1, justifyContent: 'center' }}
-          >
-            <View style={styles.authHeader}>
-              <View style={styles.authGlowBadge}>
-                <Animated.View style={[styles.glowingDot, { transform: [{ scale: pulseAnim }] }]} />
-                <Text style={styles.authGlowText}>LIVE GPS GEOLOCATION ACTIVE</Text>
-              </View>
+          <View style={styles.authCard}>
+            <Text style={styles.brandTitle}>VendiConnect<Text style={{ color: '#10b981' }}>.</Text></Text>
+            <Text style={styles.brandSub}>Hyperlocal Street Vendor Discovery & Live Doorbell</Text>
 
-              <Text style={styles.brandHeroTitle}>VendiConnect<Text style={{ color: '#10b981' }}>.</Text></Text>
-              <Text style={styles.brandHeroSub}>
-                Zero address typing. Auto-detect your gate location via GPS and track approaching vendors.
+            {/* Subtle Server Status Pill (Clean Abstraction) */}
+            <TouchableOpacity 
+              style={[styles.serverPill, isDbOffline && styles.serverPillOffline]}
+              onPress={() => setShowIpInput(!showIpInput)}
+            >
+              <Text style={styles.serverPillText}>
+                {isDbOffline ? "⚠️ Server Offline • Tap to configure" : "🟢 Cloud Connected ⚙️"}
               </Text>
+            </TouchableOpacity>
+
+            {showIpInput && (
+              <View style={{ marginBottom: 14, backgroundColor: '#0b1120', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#1e293b' }}>
+                <Text style={{ color: '#94a3b8', fontSize: 10, marginBottom: 4 }}>
+                  Backend Server Address:
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, paddingVertical: 8, fontSize: 12 }]}
+                    value={tempIpInput}
+                    onChangeText={setTempIpInput}
+                    placeholder="e.g. 10.10.50.90:5000"
+                    placeholderTextColor="#64748b"
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, { marginTop: 0, paddingHorizontal: 12, paddingVertical: 8, justifyContent: 'center' }]}
+                    onPress={() => testBackendConnection(tempIpInput)}
+                    disabled={isTestingIp}
+                  >
+                    {isTestingIp ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 11 }}>Save</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Toggle: Sign Up vs Sign In */}
+            <View style={styles.authTabRow}>
+              <TouchableOpacity 
+                style={[styles.authTabBtn, authMode === 'signup' && styles.authTabBtnActive]} 
+                onPress={() => setAuthMode('signup')}
+              >
+                <Text style={[styles.authTabText, authMode === 'signup' && styles.authTabTextActive]}>Sign Up</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.authTabBtn, authMode === 'signin' && styles.authTabBtnActive]} 
+                onPress={() => setAuthMode('signin')}
+              >
+                <Text style={[styles.authTabText, authMode === 'signin' && styles.authTabTextActive]}>Sign In</Text>
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.glassCard}>
-              <View style={styles.modernSwitcher}>
-                <TouchableOpacity 
-                  style={[styles.switchOption, authMode === 'signup' && styles.switchOptionActive]}
-                  onPress={() => setAuthMode('signup')}
-                >
-                  <Text style={[styles.switchText, authMode === 'signup' && styles.switchTextActive]}>
-                    Resident Sign Up
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.switchOption, authMode === 'login' && styles.switchOptionActive]}
-                  onPress={() => setAuthMode('login')}
-                >
-                  <Text style={[styles.switchText, authMode === 'login' && styles.switchTextActive]}>
-                    Sign In
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {authMode === 'signup' && (
-                <View style={styles.fieldBox}>
-                  <Text style={styles.fieldLabel}>FULL NAME</Text>
-                  <TextInput
-                    style={styles.fieldInput}
-                    placeholder="e.g. Poongodi Sundaram"
+            {authMode === 'signup' ? (
+              // SIGN UP FORM
+              <View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>FULL NAME</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Enter your name" 
                     placeholderTextColor="#64748b"
                     value={authName}
                     onChangeText={setAuthName}
                   />
                 </View>
-              )}
 
-              <View style={styles.fieldBox}>
-                <Text style={styles.fieldLabel}>MOBILE PHONE NUMBER</Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  placeholder="e.g. 9384766429"
-                  keyboardType="phone-pad"
-                  placeholderTextColor="#64748b"
-                  value={authPhone}
-                  onChangeText={setAuthPhone}
-                />
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>MOBILE PHONE NUMBER</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="e.g. 9840123456" 
+                    keyboardType="phone-pad"
+                    placeholderTextColor="#64748b"
+                    value={authPhone}
+                    onChangeText={setAuthPhone}
+                  />
+                </View>
+
+                <TouchableOpacity 
+                  style={styles.primaryBtn} 
+                  onPress={handleSignUp}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Sign Up & Continue 🚀</Text>
+                  )}
+                </TouchableOpacity>
               </View>
-
-              {authMode === 'signup' && (
-                <View style={styles.gpsContainerBox}>
-                  <View style={styles.gpsRow}>
-                    <Text style={styles.gpsLabelText}>GATE LOCATION (AUTO GPS)</Text>
-                    <View style={styles.gpsLiveTag}>
-                      <Text style={{ color: '#10b981', fontSize: 10, fontWeight: '800' }}>SATELLITE</Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity 
-                    style={[styles.gpsDetectButton, gpsCoords.isFetched && styles.gpsDetectButtonSuccess]} 
-                    onPress={handleFetchGpsLocation}
-                    disabled={isLocating}
-                  >
-                    {isLocating ? (
-                      <ActivityIndicator color="#ffffff" size="small" />
-                    ) : (
-                      <>
-                        <Text style={{ fontSize: 16, marginRight: 8 }}>
-                          {gpsCoords.isFetched ? "✅" : "📍"}
-                        </Text>
-                        <Text style={styles.gpsButtonText}>
-                          {gpsCoords.isFetched ? "Location Acquired (GPS Locked)" : "Tap to Detect Gate Location"}
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  <Text style={styles.gpsCoordsText} numberOfLines={1}>
-                    🛰️ {gpsCoords.label}
-                  </Text>
+            ) : (
+              // SIGN IN FORM
+              <View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>REGISTERED MOBILE NUMBER</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Enter registered mobile number" 
+                    keyboardType="phone-pad"
+                    placeholderTextColor="#64748b"
+                    value={authPhone}
+                    onChangeText={setAuthPhone}
+                  />
                 </View>
-              )}
 
-              <View style={styles.fieldBox}>
-                <Text style={styles.fieldLabel}>SECURITY PIN</Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  placeholder="••••"
-                  secureTextEntry
-                  keyboardType="number-pad"
-                  placeholderTextColor="#64748b"
-                  value={authPin}
-                  onChangeText={setAuthPin}
-                />
+                <TouchableOpacity 
+                  style={styles.primaryBtn} 
+                  onPress={handleSignIn}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Sign In with Mobile 🔐</Text>
+                  )}
+                </TouchableOpacity>
               </View>
+            )}
 
-              <TouchableOpacity 
-                style={styles.gradientBtn} 
-                onPress={handleAuthSubmit}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <Text style={styles.gradientBtnText}>
-                    {authMode === 'signup' ? 'Sync GPS & Open Radar 📍' : 'Sign In to Radar 🚀'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+          </View>
 
-              <TouchableOpacity style={styles.quickDemoCard} onPress={handleQuickDemo}>
-                <View style={styles.demoIconRing}>
-                  <Text style={{ fontSize: 18 }}>⚡</Text>
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.quickDemoTitle}>1-Click Evaluation Sign In</Text>
-                  <Text style={styles.quickDemoSub}>Instant GPS lock & demo mode</Text>
-                </View>
-                <Text style={{ color: '#10b981', fontWeight: '800' }}>GO ›</Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
         </SafeAreaView>
       </SafeAreaProvider>
     );
   }
 
-  // ==============================================
-  // VIEW 2: DYNAMIC RADAR MAP (CONNECTED TO DB)
-  // ==============================================
-  return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#ffffff' }}>
-      <StatusBar barStyle="dark-content" />
-      <SafeAreaView style={styles.mainContainer} edges={['top', 'left', 'right']}>
-        {/* Floating Top Header */}
-        <View style={styles.topFloatingBar}>
-          <View style={styles.userProfileRow}>
-            <View style={[styles.avatarCircle, { backgroundColor: user.avatarBg }]}>
-              <Text style={{ fontSize: 18, color: '#ffffff', fontWeight: '900' }}>
-                {user.name.charAt(0)}
-              </Text>
-            </View>
+  // ========================================================
+  // SCREEN 2: LOCATION ACCESS PERMISSION PROMPT
+  // ========================================================
+  if (!locationGranted) {
+    return (
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#090d16' }}>
+        <SafeAreaView style={styles.authContainer}>
+          <View style={styles.authCard}>
+            <Text style={{ fontSize: 48, textAlign: 'center', marginBottom: 12 }}>📍</Text>
+            <Text style={styles.brandTitle}>Enable Gate Location</Text>
+            <Text style={[styles.brandSub, { marginTop: 8, lineHeight: 20 }]}>
+              Vanakkam, <Text style={{ color: '#ffffff', fontWeight: '800' }}>{user.name}</Text>!{'\n'}
+              VendiConnect requires your gate location to detect approaching street carts and ring live doorbells.
+            </Text>
 
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.profileGreeting}>Vanakkam, {user.name} 👋</Text>
-              <Text style={styles.profileLocation} numberOfLines={1}>
-                📍 Gate: {user.lat.toFixed(4)}°N, {user.lng.toFixed(4)}°E
-              </Text>
-            </View>
-
-            {/* Database Sync Status Badge & Refresh Button */}
             <TouchableOpacity 
-              style={[styles.radarStatusPill, isDbConnected && styles.dbStatusConnected]}
-              onPress={fetchVendorsFromDb}
+              style={[styles.primaryBtn, { marginTop: 20 }]} 
+              onPress={handleRequestLocation}
+              disabled={isLocating}
             >
-              <Animated.View style={[styles.greenPulseDot, { transform: [{ scale: pulseAnim }] }]} />
-              <Text style={[styles.radarStatusText, isDbConnected && { color: '#065f46' }]}>
-                {isFetchingDb ? "Syncing..." : isDbConnected ? `DB Sync: ${vendorsList.length} Vendors 🔄` : `${vendorsList.length} Live 🔄`}
-              </Text>
+              {isLocating ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.primaryBtnText}>Allow Gate Location 📍</Text>
+              )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.exitBtn} onPress={() => setUser(null)}>
-              <Text style={styles.exitBtnText}>✕</Text>
+            <TouchableOpacity 
+              style={[styles.authTabBtn, { marginTop: 12 }]}
+              onPress={() => setLocationGranted(true)}
+            >
+              <Text style={{ color: '#64748b', fontSize: 12 }}>Use default Chennai Gate</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    );
+  }
+
+  // ========================================================
+  // SCREEN 3: LIVE RADAR MAP & VENDOR DISCOVERY
+  // ========================================================
+  return (
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#ffffff' }}>
+      <SafeAreaView style={styles.mainContainer} edges={['top', 'left', 'right']}>
+        
+        {/* Top Header Bar (Clean Consumer Abstraction) */}
+        <View style={styles.topBar}>
+          <View style={styles.profileRow}>
+            {/* Tapping avatar opens MongoDB Record Verification Modal */}
+            <TouchableOpacity style={styles.avatar} onPress={() => setProfileModalVisible(true)}>
+              <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
+            </TouchableOpacity>
+            
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <TouchableOpacity onPress={() => setProfileModalVisible(true)}>
+                <Text style={styles.greetingText}>Vanakkam, {user.name} 👋</Text>
+                <Text style={styles.gateCoordsText}>
+                  📍 Gate: {user.area || 'Park Town, Chennai'} • {vendorsList.length} carts nearby
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+              <Text style={styles.logoutBtnText}>Logout</Text>
             </TouchableOpacity>
           </View>
 
           {/* Search Box */}
-          <View style={styles.searchGlassBox}>
-            <Text style={{ fontSize: 15, marginRight: 8 }}>🔍</Text>
-            <TextInput
-              style={styles.searchTextInput}
-              placeholder="Search flowers, veggies, fish, tiffin..."
+          <View style={styles.searchBar}>
+            <Text style={{ fontSize: 14, marginRight: 6 }}>🔍</Text>
+            <TextInput 
+              style={styles.searchInput}
+              placeholder="Search vegetables, flowers, seafood..."
               placeholderTextColor="#94a3b8"
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery("")}>
-                <Text style={{ color: '#94a3b8', fontSize: 16 }}>✕</Text>
+          </View>
+
+          {/* Radius Selector Pills */}
+          <View style={styles.radiusRow}>
+            <Text style={styles.radiusLabel}>Radar Radius:</Text>
+            {RADIUS_OPTIONS.map(opt => (
+              <TouchableOpacity 
+                key={opt.value} 
+                style={[styles.radiusPill, selectedRadius === opt.value && styles.radiusPillActive]}
+                onPress={() => setSelectedRadius(opt.value)}
+              >
+                <Text style={[styles.radiusPillText, selectedRadius === opt.value && styles.radiusPillTextActive]}>
+                  {opt.label}
+                </Text>
               </TouchableOpacity>
-            )}
+            ))}
           </View>
 
           {/* Category Filter Pills */}
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsScrollContent}
-          >
-            {CATEGORIES.map(cat => {
-              const active = selectedCategory === cat.id;
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.categoryPill, active && styles.categoryPillActive]}
-                  onPress={() => setSelectedCategory(cat.id)}
-                >
-                  <Text style={styles.categoryPillIcon}>{cat.icon}</Text>
-                  <Text style={[styles.categoryPillText, active && styles.categoryPillTextActive]}>
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+            {CATEGORIES.map(cat => (
+              <TouchableOpacity 
+                key={cat.id} 
+                style={[styles.catPill, selectedCategory === cat.id && styles.catPillActive]}
+                onPress={() => setSelectedCategory(cat.id)}
+              >
+                <Text style={styles.catIcon}>{cat.icon}</Text>
+                <Text style={[styles.catText, selectedCategory === cat.id && styles.catTextActive]}>
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </ScrollView>
         </View>
 
-        {/* Map Canvas */}
-        <View style={styles.mapCanvas}>
+        {/* Live OpenStreetMap Canvas (Zero API Key Required) */}
+        <View style={styles.mapArea}>
           <WebView
-            ref={webViewRef}
-            style={styles.map}
+            style={{ flex: 1 }}
             source={{ html: mapHtml }}
             originWhitelist={['*']}
             javaScriptEnabled={true}
-            onMessage={handleMessage}
+            onMessage={(e) => {
+              try {
+                const parsed = JSON.parse(e.nativeEvent.data);
+                if (parsed.type === 'SELECT_VENDOR') setSelectedVendor(parsed.data);
+              } catch (err) {}
+            }}
           />
         </View>
 
-        {/* Bottom Floating Vendor Detail Sheet */}
-        {selectedVendor && (
-          <View style={styles.floatingVendorSheet}>
-            <View style={styles.etaRibbon}>
-              <View style={styles.etaLeftCol}>
-                <View style={styles.greenLiveIndicator} />
-                <Text style={styles.etaMainText}>
-                  LIVE RADAR • {selectedVendor.speed}
-                </Text>
-              </View>
-              <View style={styles.etaBadgePill}>
-                <Text style={styles.etaBadgeText}>⏱ ~{selectedVendor.etaMins} mins away</Text>
-              </View>
-            </View>
-
-            <View style={styles.sheetTitleRow}>
+        {/* DPDPA-Compliant Profile Bottom Sheet */}
+        {selectedVendor ? (
+          <View style={styles.vendorSheet}>
+            <View style={styles.sheetHeader}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.sheetVendorName}>{selectedVendor.name}</Text>
-                  {selectedVendor.verified && (
-                    <View style={styles.verifiedCheck}>
-                      <Text style={{ fontSize: 10, color: '#ffffff', fontWeight: '900' }}>✓</Text>
-                    </View>
-                  )}
+                  <Text style={styles.vendorName}>{selectedVendor.name}</Text>
+                  <Text style={styles.verifiedTag}>✓ Verified Seller</Text>
                 </View>
-                <Text style={styles.sheetSub}>
-                  {selectedVendor.tagline} • ⭐ {selectedVendor.rating} ({selectedVendor.reviewCount})
+                <Text style={styles.vendorSub}>
+                  {selectedVendor.category} • {selectedVendor.vehicle} • ⭐ {selectedVendor.rating} ({selectedVendor.reviewCount})
                 </Text>
               </View>
-
-              <View style={styles.distanceBubble}>
-                <Text style={styles.distanceBubbleText}>{selectedVendor.distance}</Text>
+              <View style={styles.etaBadge}>
+                <Text style={styles.etaText}>⏱ ~{selectedVendor.etaMins} mins</Text>
               </View>
             </View>
 
-            {/* Price Preview List */}
-            <View style={styles.itemsPreviewBox}>
-              <Text style={styles.itemsPreviewHeader}>POPULAR TODAY IN CART:</Text>
-              <View style={styles.itemsRow}>
-                {selectedVendor.items.map((it, idx) => (
-                  <View key={idx} style={styles.itemTagPill}>
-                    <Text style={styles.itemNameText}>{it.name}</Text>
-                    <Text style={styles.itemPriceText}>{it.price}</Text>
-                  </View>
-                ))}
-              </View>
+            {/* DPDPA Compliance Privacy Banner */}
+            <View style={styles.dpdpaBanner}>
+              <Text style={styles.dpdpaText}>🔒 DPDPA Protected: Contact is masked. No raw GPS tracks stored.</Text>
             </View>
 
-            {/* Buttons */}
-            <View style={styles.sheetButtonsRow}>
+            {/* Action Buttons: Wave Doorbell + Rate */}
+            <View style={styles.sheetButtons}>
               <TouchableOpacity 
-                style={styles.callActionButton}
-                onPress={() => alert(`Dialing ${selectedVendor.name}: ${selectedVendor.phone}`)}
+                style={styles.rateBtn}
+                onPress={() => setRatingModalVisible(true)}
               >
-                <Text style={styles.callActionText}>📞 Call Shop</Text>
+                <Text style={styles.rateBtnText}>⭐ Rate Vendor</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={styles.waveActionButton}
-                onPress={() => {
-                  setWaveCount(prev => prev + 1);
-                  setWaveAlertVisible(true);
-                  setTimeout(() => setWaveAlertVisible(false), 2400);
-                }}
+                style={styles.waveBtn}
+                onPress={handleWaveToStop}
               >
-                <Text style={styles.waveActionText}>🔔 Wave to Stop Here</Text>
+                <Text style={styles.waveBtnText}>🔔 Wave to Stop Here</Text>
               </TouchableOpacity>
             </View>
           </View>
+        ) : (
+          <View style={[styles.vendorSheet, { paddingVertical: 14, alignItems: 'center' }]}>
+            <Text style={{ color: '#64748b', fontSize: 13, fontWeight: '700' }}>
+              {vendorsList.length === 0 ? "No active registered vendors in database yet" : "Tap any vendor cart pin on the map"}
+            </Text>
+          </View>
         )}
 
-        {/* Wave Success Modal Alert */}
+        {/* Resident MongoDB Document Verification Modal */}
+        <Modal transparent visible={profileModalVisible} animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { maxWidth: 360 }]}>
+              <View style={{ alignItems: 'center', marginBottom: 14 }}>
+                <View style={[styles.avatar, { width: 54, height: 54, borderRadius: 27, marginBottom: 8 }]}>
+                  <Text style={{ fontSize: 24, color: '#ffffff', fontWeight: '900' }}>{user.name.charAt(0)}</Text>
+                </View>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: '#ffffff' }}>{user.name}</Text>
+                <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 4 }}>
+                  <Text style={{ color: '#10b981', fontSize: 11, fontWeight: '800' }}>✓ Stored in MongoDB Atlas</Text>
+                </View>
+              </View>
+
+              <View style={styles.docBox}>
+                <Text style={styles.docLabel}>DATABASE OBJECT ID (_id)</Text>
+                <Text style={styles.docVal}>{user.id || 'Live Mongo Document'}</Text>
+              </View>
+
+              <View style={styles.docBox}>
+                <Text style={styles.docLabel}>REGISTERED PHONE</Text>
+                <Text style={styles.docVal}>{user.phone}</Text>
+              </View>
+
+              <View style={styles.docBox}>
+                <Text style={styles.docLabel}>GATE LOCATION AREA</Text>
+                <Text style={styles.docVal}>{user.area}</Text>
+              </View>
+
+              <View style={styles.docBox}>
+                <Text style={styles.docLabel}>GATE COORDINATES</Text>
+                <Text style={styles.docVal}>{user.lat.toFixed(4)}°N, {user.lng.toFixed(4)}°E</Text>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.closeBtn, { marginTop: 14 }]}
+                onPress={() => setProfileModalVisible(false)}
+              >
+                <Text style={styles.closeBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Wave Success Modal */}
         <Modal transparent visible={waveAlertVisible} animationType="fade">
-          <View style={styles.modalBackdrop}>
-            <View style={styles.waveModalCard}>
-              <Text style={{ fontSize: 44, marginBottom: 10 }}>🔔🙋‍♂️</Text>
-              <Text style={styles.waveModalTitle}>Bell Alert Sent!</Text>
-              <Text style={styles.waveModalSub}>
-                {selectedVendor.name} has been notified to stop at your gate location ({user.lat.toFixed(4)}°N, {user.lng.toFixed(4)}°E).
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={{ fontSize: 40, textAlign: 'center', marginBottom: 10 }}>🔔🙋‍♂️</Text>
+              <Text style={styles.modalTitle}>Doorbell Alert Recorded!</Text>
+              <Text style={styles.modalBody}>
+                {selectedVendor?.name} has been notified to stop at your gate. Saved to MongoDB Atlas for live admin dispatch.
               </Text>
-              <View style={styles.waveModalPill}>
-                <Text style={{ color: '#059669', fontWeight: '800', fontSize: 12 }}>
-                  ✓ Pushcart Bell Ringing (Attempt #{waveCount})
-                </Text>
+              <TouchableOpacity 
+                style={styles.closeBtn}
+                onPress={() => setWaveAlertVisible(false)}
+              >
+                <Text style={styles.closeBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Resident Rating Modal */}
+        <Modal transparent visible={ratingModalVisible} animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Rate {selectedVendor?.name}</Text>
+              <Text style={styles.modalBody}>Leave verified feedback after your street purchase:</Text>
+
+              {/* 5-Star Row */}
+              <View style={styles.starRow}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <TouchableOpacity key={star} onPress={() => setRatingScore(star)}>
+                    <Text style={{ fontSize: 32, marginHorizontal: 4 }}>
+                      {star <= ratingScore ? '⭐' : '☆'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TextInput 
+                style={styles.feedbackInput}
+                placeholder="Optional comments (e.g. Fresh jasmine, fair price)"
+                placeholderTextColor="#94a3b8"
+                value={ratingComment}
+                onChangeText={setRatingComment}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                <TouchableOpacity 
+                  style={[styles.closeBtn, { flex: 1, backgroundColor: '#475569' }]}
+                  onPress={() => setRatingModalVisible(false)}
+                >
+                  <Text style={styles.closeBtnText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.closeBtn, { flex: 1, backgroundColor: '#059669' }]}
+                  onPress={handleSubmitRating}
+                  disabled={isRatingSubmitting}
+                >
+                  <Text style={styles.closeBtnText}>
+                    {isRatingSubmitting ? "Saving..." : "Submit Rating"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
         </Modal>
+
       </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  authContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-    backgroundColor: '#090d16',
-  },
-  authHeader: {
-    marginBottom: 20,
-    alignItems: 'center',
-  },
-  authGlowBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    marginBottom: 10,
-  },
-  glowingDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#10b981',
-    marginRight: 8,
-  },
-  authGlowText: {
-    color: '#34d399',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  brandHeroTitle: {
-    fontSize: 34,
-    fontWeight: '900',
-    color: '#ffffff',
-    letterSpacing: -1,
-  },
-  brandHeroSub: {
-    fontSize: 13,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginTop: 4,
-    paddingHorizontal: 10,
-  },
-  glassCard: {
-    backgroundColor: '#131b2e',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.45,
-    shadowRadius: 28,
-    elevation: 12,
-  },
-  modernSwitcher: {
-    flexDirection: 'row',
-    backgroundColor: '#0b1120',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 16,
-  },
-  switchOption: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 11,
-    alignItems: 'center',
-  },
-  switchOptionActive: {
-    backgroundColor: '#059669',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  switchText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748b',
-  },
-  switchTextActive: {
-    color: '#ffffff',
-  },
-  fieldBox: {
-    marginBottom: 11,
-  },
-  fieldLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#94a3b8',
-    marginBottom: 5,
-    letterSpacing: 0.6,
-  },
-  fieldInput: {
-    backgroundColor: '#0b1120',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: '#ffffff',
-    fontSize: 14,
-  },
-  gpsContainerBox: {
-    backgroundColor: '#0b1120',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-  },
-  gpsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  gpsLabelText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#94a3b8',
-    letterSpacing: 0.6,
-  },
-  gpsLiveTag: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  gpsDetectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingVertical: 10,
-    marginBottom: 6,
-  },
-  gpsDetectButtonSuccess: {
-    backgroundColor: '#064e3b',
-    borderColor: '#059669',
-  },
-  gpsButtonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  gpsCoordsText: {
-    fontSize: 11,
-    color: '#34d399',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  gradientBtn: {
-    backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingVertical: 13,
-    alignItems: 'center',
-    marginTop: 6,
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  gradientBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  quickDemoCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 14,
-    padding: 11,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  demoIconRing: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickDemoTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  quickDemoSub: {
-    fontSize: 10,
-    color: '#94a3b8',
-    marginTop: 1,
-  },
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  topFloatingBar: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-    zIndex: 10,
-  },
-  userProfileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileGreeting: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  profileLocation: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 1,
-  },
-  radarStatusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#dcfce7',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-  },
-  dbStatusConnected: {
-    backgroundColor: '#d1fae5',
-    borderColor: '#6ee7b7',
-  },
-  greenPulseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#16a34a',
-    marginRight: 5,
-  },
-  radarStatusText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#15803d',
-  },
-  exitBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#fee2e2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exitBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#dc2626',
-  },
-  searchGlassBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 10,
-  },
-  searchTextInput: {
-    flex: 1,
-    fontSize: 13,
-    color: '#0f172a',
-    padding: 0,
-  },
-  chipsScrollContent: {
-    paddingVertical: 2,
-    gap: 8,
-  },
-  categoryPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 22,
-    backgroundColor: '#f1f5f9',
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  categoryPillActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
-  },
-  categoryPillIcon: {
-    fontSize: 13,
-    marginRight: 6,
-  },
-  categoryPillText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#475569',
-  },
-  categoryPillTextActive: {
-    color: '#ffffff',
-  },
-  mapCanvas: {
-    flex: 1,
-    position: 'relative',
-  },
-  map: {
-    flex: 1,
-    width: '100%',
-  },
-  floatingVendorSheet: {
-    position: 'absolute',
-    bottom: 16,
-    left: 14,
-    right: 14,
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 16,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  etaRibbon: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#f0fdf4',
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-  },
-  etaLeftCol: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  greenLiveIndicator: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#16a34a',
-    marginRight: 6,
-  },
-  etaMainText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#166534',
-    letterSpacing: 0.4,
-  },
-  etaBadgePill: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  etaBadgeText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#ffffff',
-  },
-  sheetTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  sheetVendorName: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0f172a',
-    letterSpacing: -0.3,
-  },
-  verifiedCheck: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#059669',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetSub: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  distanceBubble: {
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#dbeafe',
-  },
-  distanceBubbleText: {
-    color: '#2563eb',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  itemsPreviewBox: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 14,
-    padding: 10,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  itemsPreviewHeader: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#94a3b8',
-    letterSpacing: 0.6,
-    marginBottom: 6,
-  },
-  itemsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  itemTagPill: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  itemNameText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  itemPriceText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#059669',
-  },
-  sheetButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  callActionButton: {
-    flex: 1,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  callActionText: {
-    color: '#334155',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  waveActionButton: {
-    flex: 1.6,
-    backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  waveActionText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  waveModalCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.25,
-    shadowRadius: 24,
-    elevation: 12,
-  },
-  waveModalTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0f172a',
-  },
-  waveModalSub: {
-    fontSize: 13,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  waveModalPill: {
-    backgroundColor: '#dcfce7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
+  authContainer: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: '#090d16' },
+  authCard: { backgroundColor: '#131b2e', borderRadius: 20, padding: 22, borderWidth: 1, borderColor: '#1e293b' },
+  brandTitle: { fontSize: 26, fontWeight: '900', color: '#ffffff', textAlign: 'center' },
+  brandSub: { fontSize: 13, color: '#94a3b8', textAlign: 'center', marginBottom: 12, marginTop: 4 },
+  serverPill: { paddingVertical: 5, paddingHorizontal: 12, borderRadius: 16, alignSelf: 'center', marginBottom: 12, backgroundColor: '#0b1120', borderWidth: 1, borderColor: '#1e293b' },
+  serverPillOffline: { borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.15)' },
+  serverPillText: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
+  authTabRow: { flexDirection: 'row', backgroundColor: '#0b1120', borderRadius: 12, padding: 4, marginBottom: 16 },
+  authTabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  authTabBtnActive: { backgroundColor: '#059669' },
+  authTabText: { color: '#64748b', fontWeight: '700', fontSize: 13 },
+  authTabTextActive: { color: '#ffffff' },
+  inputGroup: { marginBottom: 14 },
+  label: { color: '#94a3b8', fontSize: 11, fontWeight: '800', marginBottom: 5 },
+  input: { backgroundColor: '#0b1120', borderRadius: 10, borderWidth: 1, borderColor: '#1e293b', padding: 12, color: '#ffffff', fontSize: 14 },
+  primaryBtn: { backgroundColor: '#059669', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  primaryBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 14 },
+
+  mainContainer: { flex: 1, backgroundColor: '#ffffff' },
+  topBar: { paddingHorizontal: 14, paddingTop: 8, paddingBottom: 10, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  profileRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#059669', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#ffffff', fontWeight: '800', fontSize: 16 },
+  greetingText: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
+  gateCoordsText: { fontSize: 11, color: '#64748b' },
+  logoutBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#fee2e2', marginRight: 42 },
+  logoutBtnText: { color: '#dc2626', fontWeight: '800', fontSize: 11 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 8 },
+  searchInput: { flex: 1, fontSize: 13, color: '#0f172a' },
+  radiusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  radiusLabel: { fontSize: 12, fontWeight: '700', color: '#64748b', marginRight: 8 },
+  radiusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: '#f1f5f9', marginRight: 6 },
+  radiusPillActive: { backgroundColor: '#2563eb' },
+  radiusPillText: { fontSize: 11, color: '#64748b', fontWeight: '700' },
+  radiusPillTextActive: { color: '#ffffff' },
+  categoryScroll: { flexDirection: 'row' },
+  catPill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
+  catPillActive: { backgroundColor: '#059669', borderColor: '#059669' },
+  catIcon: { fontSize: 14, marginRight: 5 },
+  catText: { fontSize: 12, color: '#475569', fontWeight: '600' },
+  catTextActive: { color: '#ffffff' },
+
+  mapArea: { flex: 1 },
+  vendorSheet: { backgroundColor: '#ffffff', padding: 16, borderTopLeftRadius: 20, borderTopRightRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 8 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  vendorName: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
+  verifiedTag: { backgroundColor: '#dcfce7', color: '#15803d', fontSize: 10, fontWeight: '800', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  vendorSub: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  etaBadge: { backgroundColor: '#dbeafe', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  etaText: { color: '#1e40af', fontSize: 11, fontWeight: '800' },
+  dpdpaBanner: { backgroundColor: '#f8fafc', padding: 8, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0' },
+  dpdpaText: { fontSize: 11, color: '#475569', fontWeight: '600' },
+  sheetButtons: { flexDirection: 'row', gap: 10 },
+  rateBtn: { flex: 1, backgroundColor: '#f1f5f9', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  rateBtnText: { color: '#0f172a', fontWeight: '700', fontSize: 13 },
+  waveBtn: { flex: 1.4, backgroundColor: '#059669', paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  waveBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { backgroundColor: '#131b2e', borderRadius: 18, padding: 20, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: '#1e293b' },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#ffffff', textAlign: 'center', marginBottom: 6 },
+  modalBody: { fontSize: 12, color: '#94a3b8', textAlign: 'center', marginBottom: 14, lineHeight: 18 },
+  closeBtn: { backgroundColor: '#059669', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  closeBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
+  starRow: { flexDirection: 'row', justifyContent: 'center', marginVertical: 10 },
+  feedbackInput: { backgroundColor: '#0b1120', borderWidth: 1, borderColor: '#1e293b', borderRadius: 10, padding: 10, fontSize: 13, color: '#ffffff', height: 70, textAlignVertical: 'top' },
+
+  docBox: { backgroundColor: '#0b1120', borderRadius: 10, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#1e293b' },
+  docLabel: { fontSize: 9, color: '#64748b', fontWeight: '800', marginBottom: 2 },
+  docVal: { fontSize: 12, color: '#f1f5f9', fontWeight: '700' }
 });

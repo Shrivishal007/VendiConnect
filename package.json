@@ -1,13 +1,22 @@
 {
-  "name": "whatsapp-bot",
+  "name": "vendiconnect-system",
   "version": "1.0.0",
-  "description": "bot project",
+  "description": "VendiConnect Full Stack Monorepo (Bot, Backend, Resident App, Admin Dashboard)",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "dev": "npx concurrently -n \"BACKEND,BOT,RESIDENT,ADMIN\" -c \"blue,green,magenta,yellow\" \"cd Backend && npm run dev\" \"node index.js\" \"cd Frontend/ResidentApp && npx expo start\" \"cd Frontend/AdminApp && npx expo start --port 8082\"",
+    "start": "node index.js",
+    "bot": "node index.js",
+    "backend": "cd Backend && npm run dev",
+    "resident": "cd Frontend/ResidentApp && npx expo start",
+    "admin": "cd Frontend/AdminApp && npx expo start --port 8082"
   },
   "dependencies": {
+    "mongoose": "^8.0.0",
     "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "^1.23.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }

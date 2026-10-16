@@ -1,0 +1,5 @@
+2026/10/09-15:02:21.569 a150 Creating DB C:\Users\santhosh\VendiConnect_New\.wwebjs_auth\session\Default\Local Storage\leveldb since it was missing.
+2026/10/09-15:02:21.675 a150 Reusing MANIFEST C:\Users\santhosh\VendiConnect_New\.wwebjs_auth\session\Default\Local Storage\leveldb/MANIFEST-000001
+2026/10/09-16:39:38.198 a150 Level-0 table #5: started
+2026/10/09-16:39:38.212 a150 Level-0 table #5: 19437 bytes OK
+2026/10/09-16:39:38.216 a150 Delete type=0 #3

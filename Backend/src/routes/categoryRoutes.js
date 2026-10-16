@@ -1,9 +1,20 @@
+/**
+ * routes/categoryRoutes.js
+ * -----------------------------------------------------------------------
+ * Exposes category lookup for the vendor registration form dropdown.
+ * -----------------------------------------------------------------------
+ */
 import express from 'express';
-import { getCategories } from '../controllers/categoryController.js';
-
+import Category from '../models/Category.js';
 const router = express.Router();
-
-// Get all categories (public endpoint)
-router.get('/categories', getCategories);
-
-export default router;
+// GET /api/categories
+router.get('/', async (req, res) => {
+  try {
+    const categories = await Category.find({}).lean();
+    return res.status(200).json({ success: true, data: categories });
+  } catch (err) {
+    console.error('[categoryRoutes]', err);
+    return res.status(500).json({ success: false, message: 'Internal server error.' });
+  }
+});
+export default router;

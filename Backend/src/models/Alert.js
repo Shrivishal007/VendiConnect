@@ -1,46 +1,94 @@
-import mongoose from 'mongoose';
+/**
+ * models/Alert.js
+ * -----------------------------------------------------------------------
+ * Audit/throttle log of every proactive "vendor is nearby" push
+ * notification sent to a resident. This collection is the single
+ * source of truth the Notification Throttling engine checks against
+ * before firing a new FCM push - see controllers/proximityController.js
+ * -> checkAndThrottleAlert().
+ * -----------------------------------------------------------------------
+ */
 
-// Alert when vendor is near resident
-const AlertSchema = new mongoose.Schema(
+import mongoose from 'mongoose';
+const { Schema } = mongoose;
+
+const AlertSchema = new Schema(
   {
+    // Alert_ID: exposed via `_id` (see virtual below).
+
     Vendor_ID: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.Mixed,
       ref: 'Vendor',
-      required: [true, 'Vendor ID is required'],
+      default: null,
       index: true,
     },
 
     Resident_ID: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.Mixed,
       ref: 'Resident',
-      required: [true, 'Resident ID is required'],
+      default: null,
       index: true,
+    },
+
+    ResidentName: {
+      type: String,
+      default: 'Resident',
+      trim: true,
+    },
+
+    VendorName: {
+      type: String,
+      default: 'Vendor',
+      trim: true,
+    },
+
+    Type: {
+      type: String,
+      default: 'Stop Request',
+      trim: true,
+    },
+
+    Status: {
+      type: String,
+      default: 'DISPATCHED', // DISPATCHED, ACKNOWLEDGED, COMPLETED
+      trim: true,
     },
 
     Timestamp: {
       type: Date,
       default: Date.now,
       required: true,
-      index: true,
     },
 
     EtaMinutes: {
       type: Number,
-      required: [true, 'EtaMinutes is required'],
+      default: 2,
       min: 0,
     },
 
-    DistanceAt: {
+    DistanceAtAlert: {
       type: Number,
-      required: [true, 'DistanceAt is required'],
+      default: 0.15,
       min: 0,
     },
   },
-  { timestamps: false }
+  {
+    timestamps: true,
+  }
 );
 
-// Compound indexes for common query patterns
+// Compound index on (Vendor_ID, Resident_ID, Timestamp): this is the
+// exact index the throttle check hits - "find the most recent alert for
+// this vendor/resident pair" - so it needs to be fast and covering.
 AlertSchema.index({ Vendor_ID: 1, Resident_ID: 1, Timestamp: -1 });
-AlertSchema.index({ Resident_ID: 1, Timestamp: -1 });
 
-export default mongoose.model('Alert', AlertSchema);
+AlertSchema.virtual('Alert_ID').get(function () {
+  return this._id;
+});
+
+AlertSchema.set('toJSON', { virtuals: true });
+AlertSchema.set('toObject', { virtuals: true });
+
+const Alert = mongoose.model('Alert', AlertSchema);
+
+export default Alert;

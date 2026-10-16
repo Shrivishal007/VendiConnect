@@ -1,143 +1,119 @@
-import mongoose from 'mongoose';
-import Location from '../models/Location.js';
+/**
+ * controllers/proximityController.js
+ * -----------------------------------------------------------------------
+ * REST endpoint powering the resident app's map: "show me active
+ * vendors near my current location". Also exposes an endpoint for
+ * on-demand search from an arbitrary point (not just the resident's
+ * saved home location), since the map screen lets residents pan/search
+ * anywhere - not just around home.
+ * -----------------------------------------------------------------------
+ */
+
+import VendorLocation from '../models/VendorLocation.js';
 import { getDistanceAndEta } from '../utils/haversine.js';
-import { computeVendorStatus } from '../utils/vendorStatus.js';
 
-const DEFAULT_RADIUS_METERS = 1000;
-const MAX_RADIUS_METERS = 5000;
+const DEFAULT_RADIUS_METERS = 1000; // 1 km default search radius
+const MAX_RADIUS_METERS = 5000; // hard cap to protect the M0 cluster from expensive scans
 
-function isValidCoordinate(latitude, longitude) {
-  return (
-    Number.isFinite(latitude) &&
-    Number.isFinite(longitude) &&
-    latitude >= -90 &&
-    latitude <= 90 &&
-    longitude >= -180 &&
-    longitude <= 180
-  );
-}
+/**
+ * GET /api/vendors/nearby?lat=<num>&lng=<num>&radius=<meters>&category=<id>
+ *
+ * Uses MongoDB's $near geospatial operator (via the 2dsphere index on
+ * VendorLocation.geo) to find active vendor locations within `radius`
+ * meters of the given point, sorted nearest-first (this is $near's
+ * built-in behavior - no extra $sort needed).
+ *
+ * For each hit, also computes a Haversine-based ETA client-side-friendly
+ * value using utils/haversine, so the frontend doesn't need to
+ * re-implement the distance math.
+ */
+async function getNearbyVendors(req, res) {
+  try {
+    const { lat, lng } = req.query;
+    const radius = req.query.radius ? Number(req.query.radius) : DEFAULT_RADIUS_METERS;
 
-// Validate the shared query params (radius, category, minRating)
-function parseSearchFilters(query) {
-  const radius = query.radius !== undefined ? parseInt(query.radius, 10) : DEFAULT_RADIUS_METERS;
-  if (!Number.isFinite(radius) || radius <= 0) {
-    return { error: 'radius must be a positive number' };
-  }
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
 
-  const { category, minRating } = query;
-  if (category && !mongoose.Types.ObjectId.isValid(category)) {
-    return { error: 'Invalid category id' };
-  }
-
-  let minRatingValue;
-  if (minRating !== undefined) {
-    minRatingValue = parseFloat(minRating);
-    if (Number.isNaN(minRatingValue) || minRatingValue < 0 || minRatingValue > 5) {
-      return { error: 'minRating must be a number between 0 and 5' };
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Valid latitude and longitude are required' });
     }
-  }
 
-  return { radius, category, minRatingValue };
-}
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return res.status(400).json({ success: false, message: 'radius must be a positive number' });
+    }
 
-// Run the geo search around a point and send the response
-async function searchAndRespond(res, { latitude, longitude, radius, category, minRatingValue, notificationRadiusMeters }) {
-  const cappedRadius = Math.min(radius, MAX_RADIUS_METERS);
+    const cappedRadius = Math.min(radius, MAX_RADIUS_METERS);
 
-  const vendorMatch = { Status: 'ACTIVE' };
-  if (category) {
-    vendorMatch.Category_ID = category;
-  }
-
-  const nearbyLocations = await Location.find({
-    ExpiresAt: { $gt: new Date() },
-    geo: {
-      $near: {
-        $geometry: { type: 'Point', coordinates: [longitude, latitude] },
-        $maxDistance: cappedRadius,
+    // $near requires a 2dsphere index (already defined on VendorLocation.geo)
+    // and automatically returns results sorted by distance ascending.
+    // Expired (TTL-reaped) vendor locations are already gone from the
+    // collection by the time this query runs, so there's no need to
+    // manually filter by ExpiresAt here - MongoDB's TTL monitor handles it.
+    const nearbyLocations = await VendorLocation.find({
+      geo: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [longitude, latitude], // GeoJSON order: [lng, lat]
+          },
+          $maxDistance: cappedRadius, // meters
+        },
       },
-    },
-  })
-    .populate({
-      path: 'Vendor_ID',
-      select: 'Name Vehicle Status AvgRating Category_ID',
-      match: vendorMatch,
     })
-    .limit(50)
-    .lean();
+      .populate({
+        path: 'Vendor_ID',
+        select: 'VendorName Vehicle Status AvgRating Category_ID',
+        match: { Status: 'ACTIVE' }, // only surface vendors currently marked active
+      })
+      .limit(50) // safety cap for M0 tier read performance
+      .lean();
 
-  const activeResults = nearbyLocations.filter(
-    (loc) =>
-      loc.Vendor_ID !== null &&
-      (minRatingValue === undefined || loc.Vendor_ID.AvgRating >= minRatingValue)
-  );
+    // populate's `match` returns null (not a removed array element) for
+    // vendors that don't match - filter those out here.
+    const activeResults = nearbyLocations.filter((loc) => loc.Vendor_ID !== null);
 
-  const results = activeResults.map((loc) => {
-    const vendorLng = loc.geo.coordinates[0];
-    const vendorLat = loc.geo.coordinates[1];
+    const results = activeResults.map((loc) => {
+      const vendorLng = loc.geo.coordinates[0];
+      const vendorLat = loc.geo.coordinates[1];
 
-    const { distanceKm, etaMinutes } = getDistanceAndEta(
-      { lat: latitude, lng: longitude },
-      { lat: vendorLat, lng: vendorLng }
-    );
+      const { distanceKm, etaMinutes } = getDistanceAndEta(
+        { lat: latitude, lng: longitude },
+        { lat: vendorLat, lng: vendorLng }
+      );
 
-    const status = computeVendorStatus(loc.Vendor_ID, loc, {
-      distanceMeters: distanceKm * 1000,
-      notificationRadiusMeters,
+      return {
+        Vendor_ID: loc.Vendor_ID._id,
+        VendorName: loc.Vendor_ID.VendorName,
+        Vehicle: loc.Vendor_ID.Vehicle,
+        AvgRating: loc.Vendor_ID.AvgRating,
+        Category_ID: loc.Vendor_ID.Category_ID,
+        // Approximate location only - never expose raw/exact coordinates,
+        // and this is already the truncated grid-cell value from storage.
+        approximateLocation: {
+          latitude: vendorLat,
+          longitude: vendorLng,
+        },
+        distanceKm,
+        etaMinutes,
+        lastUpdated: loc.UpdatedAt,
+      };
     });
 
-    return {
-      Vendor_ID: loc.Vendor_ID._id,
-      VendorName: loc.Vendor_ID.Name,
-      Vehicle: loc.Vendor_ID.Vehicle,
-      AvgRating: loc.Vendor_ID.AvgRating,
-      Category_ID: loc.Vendor_ID.Category_ID,
-      approximateLocation: { latitude: vendorLat, longitude: vendorLng },
-      distanceKm,
-      etaMinutes,
-      status,
-      lastUpdated: loc.UpdatedAt,
-    };
-  });
-
-  return res.status(200).json({
-    success: true,
-    count: results.length,
-    radiusMeters: cappedRadius,
-    notificationRadiusMeters,
-    data: results,
-  });
-}
-
-// Find nearby vendors around coordinates supplied in the query (public)
-export async function getNearbyVendors(req, res) {
-  try {
-    if (req.query.residentId !== undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'residentId is not accepted here - use GET /api/vendors/nearby/me while signed in',
-      });
-    }
-
-    const latitude = parseFloat(req.query.lat);
-    const longitude = parseFloat(req.query.lng);
-
-    if (!isValidCoordinate(latitude, longitude)) {
-      return res.status(400).json({ success: false, message: 'Valid lat and lng query params are required' });
-    }
-
-    const filters = parseSearchFilters(req.query);
-    if (filters.error) {
-      return res.status(400).json({ success: false, message: filters.error });
-    }
-
-    return await searchAndRespond(res, {
-      latitude,
-      longitude,
-      radius: filters.radius,
-      category: filters.category,
-      minRatingValue: filters.minRatingValue,
-      notificationRadiusMeters: filters.radius / 2,
+    return res.status(200).json({
+      success: true,
+      count: results.length,
+      radiusMeters: cappedRadius,
+      data: results,
     });
   } catch (err) {
     console.error('[proximityController.getNearbyVendors]', err);
@@ -145,30 +121,4 @@ export async function getNearbyVendors(req, res) {
   }
 }
 
-// Find nearby vendors around the signed-in resident's stored location (requires resident auth)
-export async function getNearbyVendorsForResident(req, res) {
-  try {
-    const resident = req.resident;
-
-    if (resident.Latitude === null || resident.Longitude === null) {
-      return res.status(400).json({ success: false, message: 'Resident location not set' });
-    }
-
-    const filters = parseSearchFilters(req.query);
-    if (filters.error) {
-      return res.status(400).json({ success: false, message: filters.error });
-    }
-
-    return await searchAndRespond(res, {
-      latitude: resident.Latitude,
-      longitude: resident.Longitude,
-      radius: filters.radius,
-      category: filters.category,
-      minRatingValue: filters.minRatingValue,
-      notificationRadiusMeters: resident.NotificationRadius || DEFAULT_RADIUS_METERS / 2,
-    });
-  } catch (err) {
-    console.error('[proximityController.getNearbyVendorsForResident]', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-}
+export default getNearbyVendors;

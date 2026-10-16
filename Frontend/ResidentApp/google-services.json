@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "251922646253",
+    "project_id": "vendiconnect-b5835",
+    "storage_bucket": "vendiconnect-b5835.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:251922646253:android:8b49a8edbfa7258e89f8e4",
+        "android_client_info": {
+          "package_name": "com.vendiconnect.residents"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmU1b7OS6WiytqNGlN5O0LC0MVZwaxq60"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

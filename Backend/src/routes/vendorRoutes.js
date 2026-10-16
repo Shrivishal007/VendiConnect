@@ -1,30 +1,42 @@
-import express from 'express';
-import { locationIngestLimiter, publicRateLimiter } from '../middleware/rateLimiter.js';
-import { requireAdminAuth, requireResidentAuth, attachResident } from '../middleware/auth.js';
-import { updateVendorLocation } from '../controllers/locationController.js';
-import { getNearbyVendors, getNearbyVendorsForResident } from '../controllers/proximityController.js';
-import { getActiveVendorsSummary } from '../controllers/vendorController.js';
-import { getVendorAnalytics, getWeeklyVendorAnalytics } from '../controllers/analyticsController.js';
-import { updateConsent, revokeConsent, getVendorSession } from '../controllers/vendorSessionController.js';
-import { getVendorActivity } from '../controllers/activityLogController.js';
+/**
+ * routes/vendorRoutes.js
+ * -----------------------------------------------------------------------
+ * REST Gateway routes for vendor operations & resident interactions.
+ * -----------------------------------------------------------------------
+ */
 
+import express from 'express';
 const router = express.Router();
 
-router.post('/:vendorId/location', locationIngestLimiter, updateVendorLocation);
-router.post('/:vendorId/session/consent', updateConsent);
-router.post('/:vendorId/session/withdraw', revokeConsent);
+import updateVendorLocation from '../controllers/locationController.js';
+import getNearbyVendors from '../controllers/proximityController.js';
+import { 
+  registerVendor, 
+  getAllVendors, 
+  updateVendorStatus,
+  rateVendor,
+  getActiveVendorsSummary 
+} from '../controllers/vendorController.js';
 
-// Nearby search: public by coordinates, or by the signed-in resident's stored location
-router.get('/nearby', publicRateLimiter, getNearbyVendors);
-router.get('/nearby/me', requireResidentAuth, attachResident, getNearbyVendorsForResident);
+// POST /api/vendors/:vendorId/location
+router.post('/:vendorId/location', updateVendorLocation);
 
-// Public live summary
-router.get('/active-vendors', publicRateLimiter, getActiveVendorsSummary);
+// GET /api/vendors/nearby?lat=..&lng=..&radius=..
+router.get('/nearby', getNearbyVendors);
 
-// Vendor analytics, session and activity data (admin only)
-router.get('/:vendorId/analytics', requireAdminAuth, getVendorAnalytics);
-router.get('/:vendorId/analytics/weekly', requireAdminAuth, getWeeklyVendorAnalytics);
-router.get('/:vendorId/session', requireAdminAuth, getVendorSession);
-router.get('/:vendorId/activity', requireAdminAuth, getVendorActivity);
+// GET /api/vendors/active-summary
+router.get('/active-summary', getActiveVendorsSummary);
+
+// POST /api/vendors/register
+router.post('/register', registerVendor);
+
+// PATCH /api/vendors/:vendorId/status
+router.patch('/:vendorId/status', updateVendorStatus);
+
+// POST /api/vendors/:vendorId/rate - Submit resident review
+router.post('/:vendorId/rate', rateVendor);
+
+// GET /api/vendors - List all vendors
+router.get('/', getAllVendors);
 
 export default router;

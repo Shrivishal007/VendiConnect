@@ -1,18 +1,29 @@
-import mongoose from 'mongoose';
+/**
+ * models/Category.js
+ * -----------------------------------------------------------------------
+ * Minimal supporting model for Vendor.Category_ID (e.g. "Vegetables",
+ * "Fruits", "Street Food", "Ironing/Services"). Included here only
+ * because Vendor references it - not one of the five core entities you
+ * listed, so keep this lean and extend as needed.
+ * -----------------------------------------------------------------------
+ */
 
-// Vendor category model
-const categoriesSchema = new mongoose.Schema({
+import mongoose from 'mongoose';
+const { Schema } = mongoose;
+
+const CategorySchema = new Schema({
   Name: {
     type: String,
-    required: [true, 'Name is required'],
+    required: true,
     unique: true,
     trim: true,
   },
-
-  Icon: {
-    type: String,
+  IconKey: {
+    type: String, // maps to a frontend icon asset key
     trim: true,
   },
 });
 
-export default mongoose.model('Category', categoriesSchema);
+const Category = mongoose.model('Category', CategorySchema);
+
+export default Category;

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VendiConnect — WhatsApp Vendor Bot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #eae6df;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .phone-frame {
+      width: 100%;
+      max-width: 440px;
+      height: 100vh;
+      max-height: 94vh;
+      background: #efeae2;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.22);
+      overflow: hidden;
+      border: 1px solid #d1d7db;
+    }
+    @media (max-width: 500px) {
+      .phone-frame {
+        max-height: 100vh;
+        border-radius: 0;
+        border: none;
+      }
+    }
+    .chat-header {
+      background-color: #008069;
+      color: white;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      z-index: 10;
+    }
+    .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #008069;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .header-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .header-info h2 {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .verified-badge {
+      font-size: 11px;
+      background: #25d366;
+      color: white;
+      border-radius: 50%;
+      width: 15px;
+      height: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .header-status {
+      font-size: 11.5px;
+      color: #dcf8c6;
+      margin-top: 2px;
+      transition: color 0.2s;
+    }
+    .header-status.typing {
+      color: #ffffff;
+      font-weight: 600;
+      font-style: italic;
+    }
+    .header-tools {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .phone-input {
+      background: rgba(255,255,255,0.22);
+      border: none;
+      color: #fff;
+      font-size: 11px;
+      padding: 3px 6px;
+      border-radius: 6px;
+      width: 90px;
+      outline: none;
+      font-weight: 600;
+      text-align: center;
+    }
+    .header-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #ffffff;
+      padding: 4px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .header-btn:hover { background: rgba(255,255,255,0.3); }
+
+    /* Chat Messages Viewport */
+    .chat-messages {
+      flex: 1;
+      padding: 14px 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background-image: radial-gradient(#d1d7db 1.2px, transparent 1.2px);
+      background-size: 18px 18px;
+    }
+    .encryption-notice {
+      background: #ffeecd;
+      color: #54656f;
+      font-size: 11px;
+      line-height: 1.35;
+      padding: 7px 12px;
+      border-radius: 8px;
+      text-align: center;
+      margin: 4px auto 8px;
+      max-width: 92%;
+      box-shadow: 0 1px 0.5px rgba(11,20,26,0.13);
+    }
+    .msg {
+      max-width: 82%;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      line-height: 1.45;
+      position: relative;
+      word-break: break-word;
+      white-space: pre-wrap;
+      animation: fadeInMsg 0.15s ease-out;
+    }
+    @keyframes fadeInMsg {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .msg.bot {
+      background: #ffffff;
+      align-self: flex-start;
+      border-top-left-radius: 0;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+      color: #111b21;
+    }
+    .msg.user {
+      background: #d9fdd3;
+      align-self: flex-end;
+      border-top-right-radius: 0;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+      color: #111b21;
+    }
+    .msg-time {
+      font-size: 10px;
+      color: #667781;
+      text-align: right;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+    .checkmarks {
+      color: #53bdeb;
+      font-weight: bold;
+    }
+
+    /* Typing Indicator Bubble */
+    .typing-bubble {
+      display: none;
+      align-self: flex-start;
+      background: #ffffff;
+      border-radius: 12px;
+      border-top-left-radius: 0;
+      padding: 10px 14px;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+      gap: 4px;
+      align-items: center;
+      width: fit-content;
+    }
+    .typing-dot {
+      width: 7px;
+      height: 7px;
+      background: #8696a0;
+      border-radius: 50%;
+      animation: typingPulse 1.4s infinite ease-in-out;
+    }
+    .typing-dot:nth-child(1) { animation-delay: 0s; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typingPulse {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+      30% { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* Interactive Context Guide */
+    .guide-bar {
+      background: #f0f2f5;
+      padding: 6px 12px;
+      border-top: 1px solid #e9edef;
+      font-size: 11.5px;
+      color: #54656f;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .guide-text {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Quick Action Pills */
+    .quick-actions {
+      background: #f0f2f5;
+      padding: 6px 10px 8px;
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+    }
+    .quick-btn {
+      background: #ffffff;
+      border: 1px solid #d1d7db;
+      padding: 5px 11px;
+      border-radius: 16px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #008069;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .quick-btn:hover { background: #e8f5e9; }
+
+    /* Input Bar */
+    .chat-input-bar {
+      background: #f0f2f5;
+      padding: 8px 10px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .input-box {
+      flex: 1;
+      background: #ffffff;
+      border: none;
+      border-radius: 20px;
+      padding: 11px 16px;
+      font-size: 14px;
+      outline: none;
+      color: #111b21;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.06);
+    }
+    .input-box::placeholder {
+      color: #8696a0;
+    }
+    .action-icon-btn {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 50%;
+      color: #54656f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .action-icon-btn:hover { background: #e9edef; }
+    .send-btn {
+      background: #00a884;
+      color: white;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .send-btn:hover { background: #008069; }
+    .send-btn:active { transform: scale(0.95); }
+  </style>
+</head>
+<body>
+
+  <div class="phone-frame">
+    <!-- WhatsApp Header -->
+    <div class="chat-header">
+      <div class="avatar">🛒</div>
+      <div class="header-info">
+        <h2>VendiConnect Bot <span class="verified-badge">✓</span></h2>
+        <p id="headerStatus" class="header-status">online</p>
+      </div>
+      <div class="header-tools">
+        <input type="text" id="senderPhone" value="9876543210" class="phone-input" title="Simulated Vendor Phone Number" />
+        <button class="header-btn" onclick="resetChat()" title="Reset session and start over">🔄 Reset</button>
+        <a href="/qr" class="header-btn" title="Link real phone via WhatsApp Web">📲 QR</a>
+      </div>
+    </div>
+
+    <!-- Message Stream -->
+    <div class="chat-messages" id="messagesContainer">
+      <!-- Standard WhatsApp encryption banner -->
+      <div class="encryption-notice">
+        🔒 Messages and calls are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.
+      </div>
+      <!-- NOTE: Starts clean and empty. Vendor types 'hi' to begin! -->
+
+      <!-- Typing Indicator Bubble (Hidden by default) -->
+      <div class="typing-bubble" id="typingBubble">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+      </div>
+    </div>
+
+    <!-- Live Context Guidance Strip -->
+    <div class="guide-bar">
+      <span class="guide-text" id="guideText">💡 Type <b>hi</b> below to start vendor registration</span>
+      <span style="font-size: 10px; color: #8696a0;">Live Engine</span>
+    </div>
+
+    <!-- Quick Action Pills -->
+    <div class="quick-actions">
+      <button class="quick-btn" onclick="insertAndSend('hi')">👋 hi</button>
+      <button class="quick-btn" onclick="insertAndSend('1')">1️⃣ 1 (தமிழ் / Agree)</button>
+      <button class="quick-btn" onclick="insertAndSend('2')">2️⃣ 2 (English / Decline)</button>
+      <button class="quick-btn" onclick="insertAndSend('3')">3️⃣ 3</button>
+      <button class="quick-btn" onclick="sendLocationPin()">📍 Send GPS Pin</button>
+    </div>
+
+    <!-- Input Bar -->
+    <div class="chat-input-bar">
+      <button class="action-icon-btn" onclick="sendLocationPin()" title="Send Current Location Pin (GPS)">📍</button>
+      <input
+        type="text"
+        id="userInput"
+        class="input-box"
+        placeholder="Type 'hi' and press Enter..."
+        autofocus
+        autocomplete="off"
+        onkeydown="if(event.key==='Enter') sendMessage()"
+      />
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
+    </div>
+  </div>
+
+  <script>
+    const messagesContainer = document.getElementById('messagesContainer');
+    const userInput = document.getElementById('userInput');
+    const senderPhoneInput = document.getElementById('senderPhone');
+    const headerStatus = document.getElementById('headerStatus');
+    const typingBubble = document.getElementById('typingBubble');
+    const guideText = document.getElementById('guideText');
+
+    // Auto-focus input on launch
+    window.addEventListener('load', () => {
+      userInput.focus();
+    });
+
+    function showTyping(isTyping) {
+      if (isTyping) {
+        headerStatus.textContent = 'typing...';
+        headerStatus.className = 'header-status typing';
+        typingBubble.style.display = 'flex';
+        messagesContainer.appendChild(typingBubble);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      } else {
+        headerStatus.textContent = 'online';
+        headerStatus.className = 'header-status';
+        typingBubble.style.display = 'none';
+      }
+    }
+
+    function appendMessage(text, isUser = false) {
+      const msg = document.createElement('div');
+      msg.className = `msg ${isUser ? 'user' : 'bot'}`;
+      
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const checkmarks = isUser ? '<span class="checkmarks">✓✓</span>' : '';
+      msg.innerHTML = `<div>${formatWhatsAppMarkdown(text)}</div><div class="msg-time">${time} ${checkmarks}</div>`;
+      
+      // Insert before typing bubble
+      messagesContainer.insertBefore(msg, typingBubble);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function formatWhatsAppMarkdown(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*(.*?)\*/g, '<b>$1</b>')
+        .replace(/_(.*?)_/g, '<i>$1</i>');
+    }
+
+    function updateGuideHint(replyText) {
+      const lower = replyText.toLowerCase();
+      if (lower.includes('choose your language') || lower.includes('உங்கள் மொழியை')) {
+        guideText.innerHTML = '💡 Reply <b>1</b> for தமிழ் or <b>2</b> for English';
+        userInput.placeholder = "Reply 1 (Tamil) or 2 (English)...";
+      } else if (lower.includes('shop or business name') || lower.includes('கடை அல்லது வணிகப் பெயர்')) {
+        guideText.innerHTML = '💡 Type your <b>Shop or Cart Name</b> (Free Text)';
+        userInput.placeholder = "Enter your shop name (e.g. Raja Fresh Fruits)...";
+      } else if (lower.includes('choose your business category') || lower.includes('வணிக வகையை')) {
+        guideText.innerHTML = '💡 Reply with a <b>Category Number</b> (e.g. 1, 2...)';
+        userInput.placeholder = "Enter category number...";
+      } else if (lower.includes('selling method') || lower.includes('விற்பனை முறை')) {
+        guideText.innerHTML = '💡 Reply with a <b>Vehicle Number</b> (1: Push Cart, 2: Tricycle...)';
+        userInput.placeholder = "Enter vehicle number (1-5)...";
+      } else if (lower.includes('location-sharing consent') || lower.includes('இருப்பிடப் பகிர்வு ஒப்புதல்')) {
+        guideText.innerHTML = '💡 Reply <b>1</b> to Agree or <b>2</b> to Decline';
+        userInput.placeholder = "Reply 1 (Agree) or 2 (Decline)...";
+      } else if (lower.includes('share your current location') || lower.includes('இருப்பிடத்தை அனுப்பவும்')) {
+        guideText.innerHTML = '💡 Click <b>📍 Send GPS Pin</b> to broadcast live location!';
+        userInput.placeholder = "Click 📍 Send GPS Pin or tap location icon...";
+      } else if (lower.includes('online 🟢') || lower.includes('offline 🔴')) {
+        guideText.innerHTML = '💡 Vendor Dashboard active. Reply 1 (Update Pin), 2 (Toggle Online/Offline)';
+        userInput.placeholder = "Reply 1, 2, 3 or 4...";
+      } else {
+        guideText.innerHTML = '💡 Reply with a command or number';
+        userInput.placeholder = "Type your reply...";
+      }
+    }
+
+    async function sendMessage(overrideText = null, locationData = null) {
+      const text = overrideText !== null ? overrideText : userInput.value.trim();
+      if (!text && !locationData) return;
+
+      appendMessage(locationData ? `📍 Shared Location Pin (${locationData.latitude}, ${locationData.longitude})` : text, true);
+      if (overrideText === null) userInput.value = '';
+
+      const sender = senderPhoneInput.value.trim() || '9876543210';
+      showTyping(true);
+
+      try {
+        const res = await fetch('/api/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: text || '',
+            location: locationData || null,
+            sender: sender
+          })
+        });
+        const data = await res.json();
+        
+        // Small delay to make typing animation feel realistic
+        setTimeout(() => {
+          showTyping(false);
+          if (data.reply) {
+            appendMessage(data.reply, false);
+            updateGuideHint(data.reply);
+          }
+          userInput.focus();
+        }, 350);
+
+      } catch (err) {
+        showTyping(false);
+        appendMessage('⚠️ Error: Could not reach VendiConnect WhatsApp engine. Ensure backend is running.', false);
+        userInput.focus();
+      }
+    }
+
+    function insertAndSend(text) {
+      userInput.value = text;
+      sendMessage();
+    }
+
+    function sendLocationPin() {
+      // Chennai T. Nagar coordinates
+      sendMessage(null, { latitude: 13.0418, longitude: 80.2341 });
+    }
+
+    async function resetChat() {
+      const sender = senderPhoneInput.value.trim() || '9876543210';
+      
+      // Clear all messages except encryption notice
+      const msgs = messagesContainer.querySelectorAll('.msg');
+      msgs.forEach(m => m.remove());
+      
+      guideText.innerHTML = '💡 Chat reset. Type <b>hi</b> to start fresh!';
+      userInput.placeholder = "Type 'hi' and press Enter...";
+      userInput.value = '';
+      userInput.focus();
+
+      try {
+        await fetch('/api/simulate/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sender })
+        });
+      } catch {
+        // ignore
+      }
+    }
+  </script>
+</body>
+</html>

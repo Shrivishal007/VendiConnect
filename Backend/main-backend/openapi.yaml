@@ -1,0 +1,1850 @@
+openapi: 3.0.3
+info:
+  title: VendiConnect API
+  description: |
+    Backend API for VendiConnect - a street vendor alert system that notifies residents when nearby vendors are approaching.
+    
+    ## Authentication
+    - **Admin JWT**: Bearer token for admin endpoints (roles: SUPER_ADMIN, OPERATIONS, SUPPORT)
+    - **Firebase Token**: Bearer token for resident endpoints
+    - **Vendor API Key**: Bearer token for vendor write endpoints (VENDOR_API_SECRET)
+    
+    ## Rate Limiting
+    - Location ingest: 30 requests/minute per vendor
+    - Public endpoints: 100 requests/minute per IP
+    - Admin login: 5 requests/minute per IP
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5000/api
+    description: Development server
+  - url: https://api.vendiconnect.com/api
+    description: Production server
+
+tags:
+  - name: Health
+    description: Health check and system status
+  - name: Admin Auth
+    description: Admin authentication and profile
+  - name: Admin Vendors
+    description: Vendor management (admin only)
+  - name: Admin Residents
+    description: Resident management (admin only)
+  - name: Admin Categories
+    description: Category management (admin only)
+  - name: Admin Data
+    description: Ratings, alerts, and activity logs (admin only)
+  - name: Vendor Operations
+    description: Vendor location and consent management
+  - name: Vendor Public
+    description: Public vendor discovery endpoints
+  - name: Resident Auth
+    description: Resident authentication and profile
+  - name: Resident Preferences
+    description: Resident category preferences
+  - name: Ratings
+    description: Vendor ratings by residents
+  - name: Categories
+    description: Public category listing
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns system health status, database connectivity, and memory usage
+      operationId: healthCheck
+      responses:
+        '200':
+          description: System healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Database connection degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /admin/login:
+    post:
+      tags:
+        - Admin Auth
+      summary: Admin login
+      description: Authenticate admin user and receive JWT token
+      operationId: adminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many login attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/me:
+    get:
+      tags:
+        - Admin Auth
+      summary: Get current admin profile
+      description: Returns the authenticated admin's profile
+      operationId: getAdminMe
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Admin profile retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfile'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/register:
+    post:
+      tags:
+        - Admin Auth
+      summary: Register new admin
+      description: Create a new admin account (SUPER_ADMIN only)
+      operationId: adminRegister
+      security:
+        - AdminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRegisterRequest'
+      responses:
+        '201':
+          description: Admin created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfile'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/dashboard:
+    get:
+      tags:
+        - Admin Auth
+      summary: Get admin dashboard
+      description: Returns dashboard statistics and metrics
+      operationId: getAdminDashboard
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/pilot-report:
+    get:
+      tags:
+        - Admin Auth
+      summary: Get pilot report
+      description: Returns pilot program analytics and insights
+      operationId: getPilotReport
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Pilot report data
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/vendors:
+    get:
+      tags:
+        - Admin Vendors
+      summary: List vendors
+      description: List all vendors with filtering and pagination
+      operationId: listVendors
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Filter by vendor status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, SUSPENDED]
+        - name: category
+          in: query
+          description: Filter by category ID
+          schema:
+            type: string
+            format: uuid
+        - name: q
+          in: query
+          description: Search by vendor name
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Vendor list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/vendors/{vendorId}:
+    get:
+      tags:
+        - Admin Vendors
+      summary: Get vendor details
+      description: Get detailed information about a specific vendor
+      operationId: getVendorDetail
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Vendor details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorDetailResponse'
+        '404':
+          description: Vendor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/vendors/{vendorId}/status:
+    patch:
+      tags:
+        - Admin Vendors
+      summary: Update vendor status
+      description: Change vendor status (SUPER_ADMIN or OPERATIONS only)
+      operationId: updateVendorStatus
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE, SUSPENDED]
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStatusResponse'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/residents:
+    get:
+      tags:
+        - Admin Residents
+      summary: List residents
+      description: List all residents with search and pagination
+      operationId: listResidents
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: Search by resident name
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Resident list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResidentListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/residents/{residentId}:
+    get:
+      tags:
+        - Admin Residents
+      summary: Get resident details
+      description: Get detailed information about a specific resident (SUPER_ADMIN or OPERATIONS only)
+      operationId: getResidentDetail
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: residentId
+          in: path
+          required: true
+          description: Resident ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Resident details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResidentDetailResponse'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resident not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/categories:
+    get:
+      tags:
+        - Admin Categories
+      summary: List categories with counts
+      description: Get all categories with vendor counts
+      operationId: listCategoriesWithCounts
+      security:
+        - AdminAuth: []
+      responses:
+        '200':
+          description: Category list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryWithCount'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags:
+        - Admin Categories
+      summary: Create category
+      description: Create a new category (SUPER_ADMIN or OPERATIONS only)
+      operationId: createCategory
+      security:
+        - AdminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/categories/{categoryId}:
+    patch:
+      tags:
+        - Admin Categories
+      summary: Update category
+      description: Update category name (SUPER_ADMIN or OPERATIONS only)
+      operationId: updateCategory
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          description: Category ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+      responses:
+        '200':
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags:
+        - Admin Categories
+      summary: Delete category
+      description: Delete a category (SUPER_ADMIN only)
+      operationId: deleteCategory
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          description: Category ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Category deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/ratings:
+    get:
+      tags:
+        - Admin Data
+      summary: List ratings
+      description: Get all ratings with pagination
+      operationId: listRatings
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Rating list
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/alerts:
+    get:
+      tags:
+        - Admin Data
+      summary: List alerts
+      description: Get all alerts with pagination
+      operationId: listAlerts
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Alert list
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/activity:
+    get:
+      tags:
+        - Admin Data
+      summary: List activity logs
+      description: Get all activity logs with pagination
+      operationId: listActivity
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Activity log list
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/{vendorId}/location:
+    post:
+      tags:
+        - Vendor Operations
+      summary: Update vendor location
+      description: Submit vendor GPS coordinates (requires vendor API key)
+      operationId: updateVendorLocation
+      security:
+        - VendorAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - latitude
+                - longitude
+              properties:
+                latitude:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                  example: 13.0827
+                longitude:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+                  example: 80.2707
+      responses:
+        '200':
+          description: Location updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationResponse'
+        '401':
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Vendor suspended or no consent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/{vendorId}/session/consent:
+    post:
+      tags:
+        - Vendor Operations
+      summary: Grant location sharing consent
+      description: Vendor grants consent to share location with residents (requires vendor API key)
+      operationId: updateConsent
+      security:
+        - VendorAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+              properties:
+                phone:
+                  type: string
+                  description: Phone number for consent verification
+                  example: "+919876543210"
+      responses:
+        '200':
+          description: Consent granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/{vendorId}/session/withdraw:
+    post:
+      tags:
+        - Vendor Operations
+      summary: Withdraw location sharing consent
+      description: Vendor withdraws consent and stops sharing location (requires vendor API key)
+      operationId: revokeConsent
+      security:
+        - VendorAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Consent withdrawn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/nearby:
+    get:
+      tags:
+        - Vendor Public
+      summary: Find nearby vendors (public)
+      description: Search for nearby vendors by coordinates
+      operationId: getNearbyVendors
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          description: Latitude
+          schema:
+            type: number
+          example: 13.0827
+        - name: lng
+          in: query
+          required: true
+          description: Longitude
+          schema:
+            type: number
+          example: 80.2707
+        - name: radius
+          in: query
+          description: Search radius in meters (max 5000)
+          schema:
+            type: integer
+            default: 1000
+            maximum: 5000
+        - name: category
+          in: query
+          description: Filter by category ID
+          schema:
+            type: string
+            format: uuid
+        - name: minRating
+          in: query
+          description: Minimum rating filter (0-5)
+          schema:
+            type: number
+            minimum: 0
+            maximum: 5
+      responses:
+        '200':
+          description: Nearby vendors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NearbyVendorsResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/nearby/me:
+    get:
+      tags:
+        - Vendor Public
+      summary: Find nearby vendors (resident)
+      description: Search for nearby vendors using resident's stored location
+      operationId: getNearbyVendorsForResident
+      security:
+        - ResidentAuth: []
+      parameters:
+        - name: radius
+          in: query
+          description: Search radius in meters (max 5000)
+          schema:
+            type: integer
+            default: 1000
+            maximum: 5000
+        - name: category
+          in: query
+          description: Filter by category ID
+          schema:
+            type: string
+            format: uuid
+        - name: minRating
+          in: query
+          description: Minimum rating filter (0-5)
+          schema:
+            type: number
+            minimum: 0
+            maximum: 5
+      responses:
+        '200':
+          description: Nearby vendors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NearbyVendorsResponse'
+        '400':
+          description: Resident location not set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/active-vendors:
+    get:
+      tags:
+        - Vendor Public
+      summary: Get active vendors summary
+      description: Get count and summary of currently active vendors
+      operationId: getActiveVendorsSummary
+      responses:
+        '200':
+          description: Active vendors summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveVendorsSummary'
+
+  /vendors/{vendorId}/analytics:
+    get:
+      tags:
+        - Vendor Operations
+      summary: Get vendor analytics
+      description: Get analytics data for a specific vendor (admin only)
+      operationId: getVendorAnalytics
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Vendor analytics
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/{vendorId}/analytics/weekly:
+    get:
+      tags:
+        - Vendor Operations
+      summary: Get weekly vendor analytics
+      description: Get weekly analytics data for a specific vendor (admin only)
+      operationId: getWeeklyVendorAnalytics
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Weekly vendor analytics
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/{vendorId}/session:
+    get:
+      tags:
+        - Vendor Operations
+      summary: Get vendor session
+      description: Get session and consent status for a vendor (admin only)
+      operationId: getVendorSession
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Vendor session data
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendors/{vendorId}/activity:
+    get:
+      tags:
+        - Vendor Operations
+      summary: Get vendor activity
+      description: Get activity log for a specific vendor (admin only)
+      operationId: getVendorActivity
+      security:
+        - AdminAuth: []
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          description: Vendor ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Vendor activity log
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /residents/auth/sync:
+    post:
+      tags:
+        - Resident Auth
+      summary: Create or sync a Firebase-authenticated resident profile
+      description: Verifies a Firebase email/password ID token and creates or updates the associated resident profile.
+      operationId: syncResident
+      security:
+        - ResidentAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                address:
+                  type: string
+                  maxLength: 300
+                latitude:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                longitude:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+      responses:
+        '200':
+          description: Existing resident profile synchronized
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ResidentProfile'
+        '201':
+          description: New resident profile created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ResidentProfile'
+        '400':
+          description: Invalid resident profile values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid Firebase ID token or non-email/password provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Firebase Admin is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /residents/auth/me:
+    get:
+      tags:
+        - Resident Auth
+      summary: Get resident profile
+      description: Get current resident's profile
+      operationId: getMyResidentProfile
+      security:
+        - ResidentAuth: []
+      responses:
+        '200':
+          description: Resident profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResidentProfile'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags:
+        - Resident Auth
+      summary: Update resident profile
+      description: Update current resident's profile
+      operationId: updateMyResidentProfile
+      security:
+        - ResidentAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                address:
+                  type: string
+                latitude:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                longitude:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+                notificationRadius:
+                  type: integer
+                  minimum: 50
+                  maximum: 5000
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResidentProfile'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /residents/auth/fcm-token:
+    patch:
+      tags:
+        - Resident Auth
+      summary: Update FCM token
+      description: Update Firebase Cloud Messaging token for push notifications
+      operationId: updateMyFcmToken
+      security:
+        - ResidentAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fcmToken
+              properties:
+                fcmToken:
+                  type: string
+                  description: FCM registration token
+      responses:
+        '200':
+          description: FCM token updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /residents/{residentId}/preferences:
+    put:
+      tags:
+        - Resident Preferences
+      summary: Set resident preferences
+      description: Set preferred categories for alerts
+      operationId: setPreferences
+      security:
+        - ResidentAuth: []
+      parameters:
+        - name: residentId
+          in: path
+          required: true
+          description: Resident ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - categoryIds
+              properties:
+                categoryIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: List of preferred category IDs
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '403':
+          description: Cannot modify another resident's preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      tags:
+        - Resident Preferences
+      summary: Get resident preferences
+      description: Get preferred categories for alerts
+      operationId: getPreferences
+      security:
+        - ResidentAuth: []
+      parameters:
+        - name: residentId
+          in: path
+          required: true
+          description: Resident ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Preferences retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResponse'
+        '403':
+          description: Cannot access another resident's preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ratings:
+    post:
+      tags:
+        - Ratings
+      summary: Create rating
+      description: Rate a vendor (requires recent alert within 2 hours)
+      operationId: createRating
+      security:
+        - ResidentAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vendorId
+                - rating
+              properties:
+                vendorId:
+                  type: string
+                  format: uuid
+                  description: Vendor ID being rated
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  description: Rating value (1-5)
+                comment:
+                  type: string
+                  maxLength: 500
+                  description: Optional comment
+      responses:
+        '201':
+          description: Rating created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rating'
+        '400':
+          description: No recent alert or invalid rating
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /categories:
+    get:
+      tags:
+        - Categories
+      summary: Get all categories
+      description: Public endpoint to list all available categories
+      operationId: getCategories
+      responses:
+        '200':
+          description: Category list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+components:
+  securitySchemes:
+    AdminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for admin authentication
+    ResidentAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase
+      description: Firebase ID token for resident authentication
+    VendorAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: Vendor API secret key for vendor operations
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Error message description
+
+    SuccessMessage:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation successful
+
+    HealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        status:
+          type: string
+          enum: [ok, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        uptimeSeconds:
+          type: integer
+        database:
+          type: object
+          properties:
+            connected:
+              type: boolean
+            state:
+              type: string
+            pingMs:
+              type: integer
+              nullable: true
+            withinSlaTarget:
+              type: boolean
+              nullable: true
+        slaTargets:
+          type: object
+        memory:
+          type: object
+          properties:
+            rss:
+              type: string
+            heapUsed:
+              type: string
+            heapTotal:
+              type: string
+        env:
+          type: string
+
+    AdminLoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    AdminLoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        token:
+          type: string
+          description: JWT token
+        admin:
+          $ref: '#/components/schemas/AdminProfile'
+
+    AdminRegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        role:
+          type: string
+          enum: [SUPER_ADMIN, OPERATIONS, SUPPORT]
+
+    AdminProfile:
+      type: object
+      properties:
+        adminId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [SUPER_ADMIN, OPERATIONS, SUPPORT]
+        createdAt:
+          type: string
+          format: date-time
+
+    DashboardResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            totalVendors:
+              type: integer
+            activeVendors:
+              type: integer
+            totalResidents:
+              type: integer
+            totalAlerts:
+              type: integer
+            totalRatings:
+              type: integer
+
+    VendorListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              Vendor_ID:
+                type: string
+                format: uuid
+              VendorName:
+                type: string
+              Vehicle:
+                type: string
+              Status:
+                type: string
+                enum: [ACTIVE, INACTIVE, SUSPENDED]
+              Category:
+                type: object
+                properties:
+                  Category_ID:
+                    type: string
+                    format: uuid
+                  Name:
+                    type: string
+              AvgRating:
+                type: number
+                minimum: 0
+                maximum: 5
+              RatingCount:
+                type: integer
+              RegisteredAt:
+                type: string
+                format: date-time
+              LastLocationUpdate:
+                type: string
+                format: date-time
+                nullable: true
+              ConsentStatus:
+                type: string
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    VendorDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            vendor:
+              type: object
+            location:
+              type: object
+              nullable: true
+            session:
+              type: object
+              nullable: true
+
+    VendorStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            Vendor_ID:
+              type: string
+              format: uuid
+            Status:
+              type: string
+              enum: [ACTIVE, INACTIVE, SUSPENDED]
+
+    ResidentListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              _id:
+                type: string
+                format: uuid
+              Name:
+                type: string
+              Address:
+                type: string
+                nullable: true
+              Latitude:
+                type: number
+                nullable: true
+              Longitude:
+                type: number
+                nullable: true
+              NotificationRadius:
+                type: integer
+              createdAt:
+                type: string
+                format: date-time
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ResidentDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            resident:
+              type: object
+            preferredCategories:
+              type: array
+              items:
+                type: object
+
+    CategoryWithCount:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: uuid
+        Name:
+          type: string
+        VendorCount:
+          type: integer
+
+    Category:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: uuid
+        Name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    LocationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            Vendor_ID:
+              type: string
+              format: uuid
+            geo:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [Point]
+                coordinates:
+                  type: array
+                  items:
+                    type: number
+                  minItems: 2
+                  maxItems: 2
+            UpdatedAt:
+              type: string
+              format: date-time
+            ExpiresAt:
+              type: string
+              format: date-time
+
+    NearbyVendorsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        count:
+          type: integer
+        radiusMeters:
+          type: integer
+        notificationRadiusMeters:
+          type: integer
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              Vendor_ID:
+                type: string
+                format: uuid
+              VendorName:
+                type: string
+              Vehicle:
+                type: string
+              AvgRating:
+                type: number
+              Category_ID:
+                type: string
+                format: uuid
+              approximateLocation:
+                type: object
+                properties:
+                  latitude:
+                    type: number
+                  longitude:
+                    type: number
+              distanceKm:
+                type: number
+              etaMinutes:
+                type: number
+              status:
+                type: string
+              lastUpdated:
+                type: string
+                format: date-time
+
+    ActiveVendorsSummary:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        activeCount:
+          type: integer
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              Vendor_ID:
+                type: string
+                format: uuid
+              VendorName:
+                type: string
+              Category:
+                type: string
+              LastSeen:
+                type: string
+                format: date-time
+
+    ResidentProfile:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: uuid
+        Name:
+          type: string
+        Address:
+          type: string
+          nullable: true
+        Latitude:
+          type: number
+          nullable: true
+        Longitude:
+          type: number
+          nullable: true
+        NotificationRadius:
+          type: integer
+        FirebaseUID:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PreferencesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              Category_ID:
+                type: string
+                format: uuid
+              Name:
+                type: string
+
+    Rating:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: uuid
+        Vendor_ID:
+          type: string
+          format: uuid
+        Resident_ID:
+          type: string
+          format: uuid
+        Rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        Comment:
+          type: string
+          nullable: true
+        Timestamp:
+          type: string
+          format: date-time
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer

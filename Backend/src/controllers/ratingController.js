@@ -7,23 +7,27 @@ import { recalculateAvgRating } from '../services/ratingService.js';
 const MAX_REVIEW_LENGTH = 500;
 const RATING_PROXIMITY_WINDOW_HOURS = parseInt(process.env.RATING_PROXIMITY_WINDOW_HOURS, 10) || 2;
 
+// Create or update a resident's rating for a vendor
 export async function createRating(req, res) {
   try {
     const { vendorId, ratingValue, review } = req.body || {};
     const residentId = req.resident._id;
 
+    // Validate the vendor ID
     if (!mongoose.Types.ObjectId.isValid(vendorId)) {
       return res
         .status(400)
         .json({ success: false, message: 'Valid vendorId is required' });
     }
 
+    // Ensure the rating is between 1 and 5
     if (typeof ratingValue !== 'number' || ratingValue < 1 || ratingValue > 5) {
       return res
         .status(400)
         .json({ success: false, message: 'ratingValue must be a number between 1 and 5' });
     }
 
+    // Validate the optional review and enforce its length limit
     if (review !== undefined && review !== null) {
       if (typeof review !== 'string') {
         return res.status(400).json({ success: false, message: 'review must be a string' });
@@ -33,11 +37,13 @@ export async function createRating(req, res) {
       }
     }
 
+    // Confirm that the vendor exists
     const vendorExists = await Vendor.exists({ _id: vendorId });
     if (!vendorExists) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
+    // Require a recent proximity alert before allowing a rating
     const proximityWindowStart = new Date(Date.now() - RATING_PROXIMITY_WINDOW_HOURS * 60 * 60 * 1000);
     const qualifyingAlert = await Alert.exists({
       Vendor_ID: vendorId,
@@ -52,6 +58,7 @@ export async function createRating(req, res) {
       });
     }
 
+    // Upsert the resident's rating to prevent duplicate records
     const rating = await Ratings.findOneAndUpdate(
       { Vendor_ID: vendorId, Resident_ID: residentId },
       {
@@ -64,6 +71,7 @@ export async function createRating(req, res) {
       { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true, runValidators: true }
     );
 
+    // Recalculate the vendor's aggregate rating statistics
     const { avgRating, ratingCount } = await recalculateAvgRating(vendorId);
 
     return res.status(201).json({
@@ -76,6 +84,7 @@ export async function createRating(req, res) {
       },
     });
   } catch (err) {
+    // Log unexpected errors and return a generic response
     console.error('[ratingController.createRating]', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }

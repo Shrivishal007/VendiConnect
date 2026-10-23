@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Resident category preferences
+// Define resident preferences for vendor categories
 const preferencesSchema = new mongoose.Schema(
   {
     Resident_ID: {
@@ -20,6 +20,7 @@ const preferencesSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Prevent duplicate category preferences for the same resident
 preferencesSchema.index({ Resident_ID: 1, Category_ID: 1 }, { unique: true });
 
 export default mongoose.model('Preferences', preferencesSchema);

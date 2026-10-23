@@ -12,33 +12,33 @@ import { listActivity } from '../controllers/adminActivityController.js';
 
 const router = express.Router();
 
-// Auth routes
+// Authentication and access control routes
 router.post('/login', adminLoginRateLimiter, login);
 router.get('/me', requireAdminAuth, getMe);
 router.post('/register', adminLoginRateLimiter, requireAdminAuth, requireRole('SUPER_ADMIN'), register);
 
-// Dashboard & reports
+// Dashboard overview and pilot reports
 router.get('/dashboard', requireAdminAuth, getDashboard);
 router.get('/pilot-report', requireAdminAuth, getPilotReport);
 
-// Vendor management
+// Vendor listing, details, and status management
 router.get('/vendors', requireAdminAuth, listVendors);
 router.get('/vendors/:vendorId', requireAdminAuth, getVendorDetail);
-router.patch('/vendors/:vendorId/status', requireAdminAuth, updateVendorStatus);
+router.patch('/vendors/:vendorId/status', requireAdminAuth, requireRole('SUPER_ADMIN', 'OPERATIONS'), updateVendorStatus);
 
-// Resident management
+// Resident listing and details
 router.get('/residents', requireAdminAuth, listResidents);
-router.get('/residents/:residentId', requireAdminAuth, getResidentDetail);
+router.get('/residents/:residentId', requireAdminAuth, requireRole('SUPER_ADMIN', 'OPERATIONS'), getResidentDetail);
 
-// Category management
+// Category listing and management
 router.get('/categories', requireAdminAuth, listCategoriesWithCounts);
 router.post('/categories', requireAdminAuth, requireRole('SUPER_ADMIN', 'OPERATIONS'), createCategory);
 router.patch('/categories/:categoryId', requireAdminAuth, requireRole('SUPER_ADMIN', 'OPERATIONS'), updateCategory);
 router.delete('/categories/:categoryId', requireAdminAuth, requireRole('SUPER_ADMIN'), deleteCategory);
 
-// Data views
+// Ratings, alerts, and activity records
 router.get('/ratings', requireAdminAuth, listRatings);
 router.get('/alerts', requireAdminAuth, listAlerts);
 router.get('/activity', requireAdminAuth, listActivity);
 
-export default router;
+export default router;

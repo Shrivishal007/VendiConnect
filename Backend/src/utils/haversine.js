@@ -6,7 +6,7 @@ function toRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
-// Calculate distance between two points using Haversine formula
+// Calculate the distance between two coordinates using the Haversine formula
 export function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
   [lat1, lon1, lat2, lon2].forEach((coord) => {
     if (typeof coord !== 'number' || Number.isNaN(coord)) {
@@ -28,7 +28,7 @@ export function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
   return EARTH_RADIUS_KM * c;
 }
 
-// Convert distance to ETA in minutes based on walking speed
+// Estimate walking time in minutes based on distance and walking speed
 export function distanceToEtaMinutes(distanceKm, walkingSpeedKmh = DEFAULT_WALKING_SPEED_KMH) {
   if (walkingSpeedKmh <= 0) {
     throw new RangeError('walkingSpeedKmh must be greater than 0');
@@ -38,7 +38,7 @@ export function distanceToEtaMinutes(distanceKm, walkingSpeedKmh = DEFAULT_WALKI
   return Math.max(1, Math.round(minutes));
 }
 
-// Get both distance and ETA between two points
+// Calculate the distance and estimated walking time between two points
 export function getDistanceAndEta(pointA, pointB, walkingSpeedKmh = DEFAULT_WALKING_SPEED_KMH) {
   const distanceKm = calculateHaversineDistanceKm(pointA.lat, pointA.lng, pointB.lat, pointB.lng);
   const etaMinutes = distanceToEtaMinutes(distanceKm, walkingSpeedKmh);

@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 const DECIMAL_PRECISION = 3;
 
-// Approximate coordinates by reducing precision for privacy
+// Reduce coordinate precision to limit location detail for privacy
 export function approximateCoordinates(latitude, longitude) {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     throw new TypeError('approximateCoordinates expects numeric latitude and longitude');
@@ -26,7 +26,7 @@ export function approximateCoordinates(latitude, longitude) {
   };
 }
 
-// Convert coordinates to approximate GeoJSON Point
+// Convert approximate coordinates into a GeoJSON Point
 export function toApproximateGeoPoint(latitude, longitude) {
   const approx = approximateCoordinates(latitude, longitude);
   return {
@@ -35,7 +35,15 @@ export function toApproximateGeoPoint(latitude, longitude) {
   };
 }
 
-// Hash phone number using HMAC-SHA256
+// Standardize phone numbers by trimming whitespace and removing formatting characters
+export function normalizePhoneNumber(phone) {
+  const trimmed = phone.trim();
+  const hasPlus = trimmed.startsWith('+');
+  const digitsOnly = trimmed.replace(/\D/g, '');
+  return hasPlus ? `+${digitsOnly}` : digitsOnly;
+}
+
+// Generate a keyed SHA-256 hash of a normalized phone number
 export function hashPhoneNumber(rawPhoneNumber) {
   if (!rawPhoneNumber || typeof rawPhoneNumber !== 'string') {
     throw new TypeError('hashPhoneNumber expects a non-empty string');
@@ -48,12 +56,4 @@ export function hashPhoneNumber(rawPhoneNumber) {
 
   const normalized = normalizePhoneNumber(rawPhoneNumber);
   return crypto.createHmac('sha256', secret).update(normalized).digest('hex');
-}
-
-// Normalize phone number format
-export function normalizePhoneNumber(phone) {
-  const trimmed = phone.trim();
-  const hasPlus = trimmed.startsWith('+');
-  const digitsOnly = trimmed.replace(/\D/g, '');
-  return hasPlus ? `+${digitsOnly}` : digitsOnly;
 }

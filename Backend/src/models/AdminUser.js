@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 
 const SALT_ROUNDS = 12;
 
-// Admin user model with password hashing
+// Define the admin user schema with secure password hashing
 const adminUserSchema = new mongoose.Schema(
   {
     Email: {
@@ -15,17 +15,21 @@ const adminUserSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Exclude passwords from query results by default
     Password: { type: String, required: [true, 'Password is required'], select: false },
 
+    // Assign an administrative role with OPERATIONS as the default
     Role: { type: String, enum: ['SUPER_ADMIN', 'OPERATIONS', 'SUPPORT'], default: 'OPERATIONS' },
   },
   { timestamps: true }
 );
 
+// Compare a supplied password against the stored hash
 adminUserSchema.methods.comparePassword = async function comparePassword(password) {
   return bcrypt.compare(password, this.Password);
 };
 
+// Hash a plain-text password using the configured bcrypt cost factor
 adminUserSchema.statics.hashPassword = async (plainText) => {
   return bcrypt.hash(plainText, SALT_ROUNDS);
 };

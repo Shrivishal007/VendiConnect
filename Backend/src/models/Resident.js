@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Resident user model with location and notification settings
+// Define the resident profile, location, and notification settings
 const residentSchema = new mongoose.Schema(
   {
     Name: {
@@ -19,6 +19,7 @@ const residentSchema = new mongoose.Schema(
       lowercase: true,
     },
 
+    // Unique Firebase identifier for resident authentication
     FirebaseUID: {
       type: String,
       required: [true, 'Firebase UID is required'],
@@ -26,6 +27,7 @@ const residentSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Store the resident's latitude and longitude when available
     Latitude: {
       type: Number,
       min: -90,
@@ -40,6 +42,7 @@ const residentSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Configure the distance within which vendor notifications are sent
     NotificationRadius: {
       type: Number,
       min: 50,
@@ -52,6 +55,7 @@ const residentSchema = new mongoose.Schema(
       default: '',
     },
 
+    // Firebase Cloud Messaging token used for push notifications
     FcmToken: {
       type: String,
       default: null,
@@ -60,7 +64,7 @@ const residentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Compound index for residents with location set
+// Optimize queries that filter residents by latitude and longitude
 residentSchema.index({ Latitude: 1, Longitude: 1 });
 
 export default mongoose.model('Resident', residentSchema);

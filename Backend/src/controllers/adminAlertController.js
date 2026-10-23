@@ -8,6 +8,7 @@ export async function listAlerts(req, res) {
     const { vendorId, residentId } = req.query;
     const { page, limit, skip } = parsePagination(req.query);
 
+    // Build filters based on the provided IDs
     const match = {};
     if (vendorId) {
       if (!mongoose.Types.ObjectId.isValid(vendorId)) {
@@ -22,6 +23,7 @@ export async function listAlerts(req, res) {
       match.Resident_ID = residentId;
     }
 
+    // Fetch paginated alerts and total count concurrently
     const [alerts, total] = await Promise.all([
       Alert.find(match)
         .populate({ path: 'Vendor_ID', select: 'Name' })
@@ -33,6 +35,7 @@ export async function listAlerts(req, res) {
       Alert.countDocuments(match),
     ]);
 
+    // Format alerts for the API response
     const data = alerts.map((alert) => ({
       Alert_ID: alert._id,
       VendorName: alert.Vendor_ID?.Name || 'Unknown vendor',
@@ -42,6 +45,7 @@ export async function listAlerts(req, res) {
       Timestamp: alert.Timestamp,
     }));
 
+    // Return alerts along with pagination metadata
     return res.status(200).json({ success: true, data, meta: buildPageMeta({ page, limit, total }) });
   } catch (err) {
     console.error('[adminAlertController.listAlerts]', err);

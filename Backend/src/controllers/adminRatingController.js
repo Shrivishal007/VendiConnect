@@ -8,6 +8,7 @@ export async function listRatings(req, res) {
     const { vendorId } = req.query;
     const { page, limit, skip } = parsePagination(req.query);
 
+    // Validate and apply the vendor filter
     const match = {};
     if (vendorId) {
       if (!mongoose.Types.ObjectId.isValid(vendorId)) {
@@ -16,6 +17,7 @@ export async function listRatings(req, res) {
       match.Vendor_ID = vendorId;
     }
 
+    // Fetch paginated ratings and total count concurrently
     const [ratings, total] = await Promise.all([
       Ratings.find(match)
         .populate({ path: 'Vendor_ID', select: 'Name' })
@@ -26,6 +28,7 @@ export async function listRatings(req, res) {
       Ratings.countDocuments(match),
     ]);
 
+    // Format ratings for the API response
     const data = ratings.map((rating) => ({
       Rating_ID: rating._id,
       VendorName: rating.Vendor_ID?.Name || 'Unknown vendor',
@@ -36,6 +39,7 @@ export async function listRatings(req, res) {
       RatingDate: rating.RatingDate,
     }));
 
+    // Return ratings along with pagination metadata
     return res.status(200).json({ success: true, data, meta: buildPageMeta({ page, limit, total }) });
   } catch (err) {
     console.error('[adminRatingController.listRatings]', err);

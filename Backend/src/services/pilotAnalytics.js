@@ -5,12 +5,12 @@ import Vendor from '../models/Vendor.js';
 
 const DEFAULT_WINDOW_DAYS = 7;
 
-// Get total alerts dispatched within a time period
+// Count alerts dispatched within the specified time period
 async function getTotalAlertsDispatched(periodStart, periodEnd) {
   return Alert.countDocuments({ Timestamp: { $gte: periodStart, $lte: periodEnd } });
 }
 
-// Calculate estimated active vendor hours based on location updates
+// Estimate active vendor hours from daily location update events
 async function getEstimatedActiveVendorHours(periodStart, periodEnd) {
   const results = await ActivityLog.aggregate([
     {
@@ -64,7 +64,7 @@ async function getEstimatedActiveVendorHours(periodStart, periodEnd) {
   };
 }
 
-// Calculate average rating per category within a time period
+// Calculate average ratings and rating counts grouped by vendor category
 async function getAvgRatingPerCategory(periodStart, periodEnd) {
   return Ratings.aggregate([
     { $match: { RatingDate: { $gte: periodStart, $lte: periodEnd } } },
@@ -106,7 +106,7 @@ async function getAvgRatingPerCategory(periodStart, periodEnd) {
   ]);
 }
 
-// Calculate notification to interaction density ratio
+// Measure the proportion of alerted vendor-resident pairs that resulted in ratings
 async function getNotificationToInteractionDensity(periodStart, periodEnd) {
   const [alertPairs, ratingPairs] = await Promise.all([
     Alert.aggregate([
@@ -146,7 +146,7 @@ async function getNotificationToInteractionDensity(periodStart, periodEnd) {
   };
 }
 
-// Generate comprehensive pilot report for a time period
+// Generate a pilot report using a custom date range or a default seven-day window
 export async function generatePilotReport(options = {}) {
   const periodEnd = options.to instanceof Date ? options.to : new Date();
   const periodStart =
@@ -154,6 +154,7 @@ export async function generatePilotReport(options = {}) {
       ? options.from
       : new Date(periodEnd.getTime() - (options.windowDays || DEFAULT_WINDOW_DAYS) * 24 * 60 * 60 * 1000);
 
+  // Collect report metrics concurrently
   const [totalAlertsDispatched, activeVendorHours, avgRatingPerCategory, interactionDensity, totalVendors] =
     await Promise.all([
       getTotalAlertsDispatched(periodStart, periodEnd),

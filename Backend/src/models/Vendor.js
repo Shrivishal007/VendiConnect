@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Vendor model with ratings and status
+// Define the vendor profile, status, category, and rating details
 const vendorSchema = new mongoose.Schema(
   {
     Name: {
@@ -17,12 +17,14 @@ const vendorSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Specify the vendor's vehicle type
     Vehicle: {
       type: String,
       trim: true,
       default: 'Push Cart',
     },
 
+    // Track whether the vendor is active, inactive, or suspended
     Status: {
       type: String,
       enum: ['ACTIVE', 'INACTIVE', 'SUSPENDED'],
@@ -30,6 +32,7 @@ const vendorSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Store the vendor's average customer rating
     AvgRating: {
       type: Number,
       min: 0,
@@ -53,8 +56,10 @@ const vendorSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Compound indexes for common query patterns
+// Optimize queries filtering vendors by status and category
 vendorSchema.index({ Status: 1, Category_ID: 1 });
+
+// Optimize queries sorting vendors by average rating within each status
 vendorSchema.index({ Status: 1, AvgRating: -1 });
 
 export default mongoose.model('Vendor', vendorSchema);

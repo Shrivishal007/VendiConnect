@@ -6,6 +6,7 @@ import { computeVendorStatus } from '../utils/vendorStatus.js';
 const DEFAULT_RADIUS_METERS = 1000;
 const MAX_RADIUS_METERS = 5000;
 
+// Validate latitude and longitude ranges
 function isValidCoordinate(latitude, longitude) {
   return (
     Number.isFinite(latitude) &&
@@ -17,7 +18,7 @@ function isValidCoordinate(latitude, longitude) {
   );
 }
 
-// Validate the shared query params (radius, category, minRating)
+// Validate and parse shared search filters
 function parseSearchFilters(query) {
   const radius = query.radius !== undefined ? parseInt(query.radius, 10) : DEFAULT_RADIUS_METERS;
   if (!Number.isFinite(radius) || radius <= 0) {
@@ -40,8 +41,12 @@ function parseSearchFilters(query) {
   return { radius, category, minRatingValue };
 }
 
-// Run the geo search around a point and send the response
-async function searchAndRespond(res, { latitude, longitude, radius, category, minRatingValue, notificationRadiusMeters }) {
+// Search for nearby vendors and return their details
+async function searchAndRespond(
+  res,
+  { latitude, longitude, radius, category, minRatingValue, notificationRadiusMeters }
+) {
+  // Enforce the maximum search radius
   const cappedRadius = Math.min(radius, MAX_RADIUS_METERS);
 
   const vendorMatch = { Status: 'ACTIVE' };
@@ -49,6 +54,7 @@ async function searchAndRespond(res, { latitude, longitude, radius, category, mi
     vendorMatch.Category_ID = category;
   }
 
+  // Find unexpired locations within the requested radius
   const nearbyLocations = await Location.find({
     ExpiresAt: { $gt: new Date() },
     geo: {
@@ -63,15 +69,17 @@ async function searchAndRespond(res, { latitude, longitude, radius, category, mi
       select: 'Name Vehicle Status AvgRating Category_ID',
       match: vendorMatch,
     })
-    .limit(50)
+    .limit(200)
     .lean();
 
+  // Exclude inactive vendors and those below the minimum rating
   const activeResults = nearbyLocations.filter(
     (loc) =>
       loc.Vendor_ID !== null &&
       (minRatingValue === undefined || loc.Vendor_ID.AvgRating >= minRatingValue)
-  );
+  ).slice(0, 50);
 
+  // Calculate distance, estimated walking time, and vendor status
   const results = activeResults.map((loc) => {
     const vendorLng = loc.geo.coordinates[0];
     const vendorLat = loc.geo.coordinates[1];
@@ -109,9 +117,10 @@ async function searchAndRespond(res, { latitude, longitude, radius, category, mi
   });
 }
 
-// Find nearby vendors around coordinates supplied in the query (public)
+// Find nearby vendors using coordinates supplied in the public query
 export async function getNearbyVendors(req, res) {
   try {
+    // Prevent clients from querying on behalf of another resident
     if (req.query.residentId !== undefined) {
       return res.status(400).json({
         success: false,
@@ -122,6 +131,7 @@ export async function getNearbyVendors(req, res) {
     const latitude = parseFloat(req.query.lat);
     const longitude = parseFloat(req.query.lng);
 
+    // Require valid coordinates before searching
     if (!isValidCoordinate(latitude, longitude)) {
       return res.status(400).json({ success: false, message: 'Valid lat and lng query params are required' });
     }
@@ -140,16 +150,18 @@ export async function getNearbyVendors(req, res) {
       notificationRadiusMeters: filters.radius / 2,
     });
   } catch (err) {
+    // Log unexpected errors and return a generic response
     console.error('[proximityController.getNearbyVendors]', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 }
 
-// Find nearby vendors around the signed-in resident's stored location (requires resident auth)
+// Find nearby vendors using the authenticated resident's stored location
 export async function getNearbyVendorsForResident(req, res) {
   try {
     const resident = req.resident;
 
+    // Ensure the resident has a saved location
     if (resident.Latitude === null || resident.Longitude === null) {
       return res.status(400).json({ success: false, message: 'Resident location not set' });
     }
@@ -168,6 +180,7 @@ export async function getNearbyVendorsForResident(req, res) {
       notificationRadiusMeters: resident.NotificationRadius || DEFAULT_RADIUS_METERS / 2,
     });
   } catch (err) {
+    // Log unexpected errors and return a generic response
     console.error('[proximityController.getNearbyVendorsForResident]', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }

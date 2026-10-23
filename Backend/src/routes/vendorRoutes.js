@@ -10,18 +10,19 @@ import { getVendorActivity } from '../controllers/activityLogController.js';
 
 const router = express.Router();
 
+// Vendor location updates and session consent management
 router.post('/:vendorId/location', locationIngestLimiter, updateVendorLocation);
 router.post('/:vendorId/session/consent', updateConsent);
 router.post('/:vendorId/session/withdraw', revokeConsent);
 
-// Nearby search: public by coordinates, or by the signed-in resident's stored location
+// Find nearby vendors using coordinates or the authenticated resident's location
 router.get('/nearby', publicRateLimiter, getNearbyVendors);
 router.get('/nearby/me', requireResidentAuth, attachResident, getNearbyVendorsForResident);
 
-// Public live summary
+// Public summary of currently active vendors
 router.get('/active-vendors', publicRateLimiter, getActiveVendorsSummary);
 
-// Vendor analytics, session and activity data (admin only)
+// Admin-only vendor analytics, session details, and activity logs
 router.get('/:vendorId/analytics', requireAdminAuth, getVendorAnalytics);
 router.get('/:vendorId/analytics/weekly', requireAdminAuth, getWeeklyVendorAnalytics);
 router.get('/:vendorId/session', requireAdminAuth, getVendorSession);

@@ -1,6 +1,6 @@
 import cors from 'cors';
 
-const defaultOrigins = ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8081'];
+const defaultOrigins = ['http://localhost:5000', 'http://localhost:3000', 'http://localhost:5173', 'http://localhost:8081'];
 
 // Parse allowed origins from env or use defaults
 function parseAllowedOrigins() {

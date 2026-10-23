@@ -3,7 +3,7 @@ import Vendor from '../models/Vendor.js';
 import { normalizePhoneNumber } from '../utils/privacy.js';
 import { recordConsent, withdrawConsent, getSession } from '../services/vendorSessionService.js';
 
-// Update vendor consent status
+// Update vendor consent status.
 export async function updateConsent(req, res) {
   try {
     const { vendorId } = req.params;
@@ -17,6 +17,7 @@ export async function updateConsent(req, res) {
       return res.status(400).json({ success: false, message: 'whatsappId is required' });
     }
 
+    // Validate the phone number using its normalized digit count.
     const digitCount = normalizePhoneNumber(whatsappId).replace(/\D/g, '').length;
     if (digitCount < 7 || digitCount > 15) {
       return res.status(400).json({ success: false, message: 'whatsappId must be a valid phone number' });
@@ -50,7 +51,7 @@ export async function updateConsent(req, res) {
   }
 }
 
-// Revoke vendor consent
+// Revoke vendor consent and stop location tracking.
 export async function revokeConsent(req, res) {
   try {
     const { vendorId } = req.params;
@@ -80,7 +81,7 @@ export async function revokeConsent(req, res) {
   }
 }
 
-// Get vendor session details (admin only; the stored phone hash is never returned)
+// Get vendor session details (admin only; never expose the stored phone hash).
 export async function getVendorSession(req, res) {
   try {
     const { vendorId } = req.params;

@@ -8,7 +8,7 @@ import { logActivity } from './activityLogService.js';
 
 const LOCATION_TTL_MINUTES = parseInt(process.env.LOCATION_TTL_MINUTES, 10) || 30;
 
-// Error carrying the HTTP status the controller should answer with
+// Error class for location ingestion failures with HTTP status codes
 export class LocationIngestError extends Error {
   constructor(message, statusCode) {
     super(message);
@@ -17,14 +17,16 @@ export class LocationIngestError extends Error {
   }
 }
 
-// Validate, authorize (vendor exists, not suspended, consent active) and store a vendor location
+// Validate vendor details, verify consent, and store the approximate location
 export async function ingestVendorLocation(vendorId, latitude, longitude) {
   const startedAt = Date.now();
 
+  // Validate the vendor ID format
   if (!mongoose.Types.ObjectId.isValid(vendorId)) {
     throw new LocationIngestError('Invalid vendorId', 400);
   }
 
+  // Validate coordinate types, values, and geographic ranges
   if (
     typeof latitude !== 'number' ||
     typeof longitude !== 'number' ||
@@ -38,6 +40,7 @@ export async function ingestVendorLocation(vendorId, latitude, longitude) {
     throw new LocationIngestError('Invalid latitude or longitude', 400);
   }
 
+  // Fetch vendor status and verify location-sharing consent concurrently
   const [vendor, consentActive] = await Promise.all([
     Vendor.findById(vendorId).select('Status').lean(),
     hasActiveConsent(vendorId),
@@ -53,10 +56,16 @@ export async function ingestVendorLocation(vendorId, latitude, longitude) {
     throw new LocationIngestError('Consent required before location can be shared', 403);
   }
 
+  // Approximate coordinates and calculate their expiration time
   const geoPoint = toApproximateGeoPoint(latitude, longitude);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + LOCATION_TTL_MINUTES * 60 * 1000);
 
+  // Check whether the existing location has expired
+  const existingLocation = await Location.findOne({ Vendor_ID: vendorId }).lean();
+  const wasExpired = !existingLocation || existingLocation.ExpiresAt <= now;
+
+  // Upsert the vendor's location and return the updated document
   const updatedLocation = await Location.findOneAndUpdate(
     { Vendor_ID: vendorId },
     {
@@ -68,13 +77,16 @@ export async function ingestVendorLocation(vendorId, latitude, longitude) {
     { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
   );
 
-  // Only touches the document when the vendor was actually inactive (suspended vendors were rejected above)
-  await Vendor.updateOne({ _id: vendorId, Status: 'INACTIVE' }, { $set: { Status: 'ACTIVE' } });
+  // Reactivate an inactive vendor only when its location was expired or missing
+  if (wasExpired) {
+    await Vendor.updateOne({ _id: vendorId, Status: 'INACTIVE' }, { $set: { Status: 'ACTIVE' } });
+  }
 
-  // Both helpers swallow and log their own errors, so they never fail an ingest
+  // Update session activity and log the location event without blocking ingestion
   touchLastActive(vendorId);
   logActivity(vendorId, 'Location Updated');
 
+  // Warn when synchronous processing exceeds the configured SLA target
   const elapsedMs = Date.now() - startedAt;
   if (elapsedMs > SLA_TARGETS.WEBHOOK_PROCESSING_LATENCY_MS) {
     console.warn(

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Resident ratings for vendors
+// Define resident ratings and reviews for vendors
 const ratingsSchema = new mongoose.Schema(
   {
     Resident_ID: {
@@ -17,6 +17,7 @@ const ratingsSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Restrict ratings to a five-star scale
     Rating: {
       type: Number,
       required: [true, 'Rating value is required'],
@@ -30,6 +31,7 @@ const ratingsSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Optional written review for the vendor
     Review: {
       type: String,
       trim: true,
@@ -40,8 +42,10 @@ const ratingsSchema = new mongoose.Schema(
   { timestamps: false }
 );
 
-// Compound indexes for common query patterns
+// Allow only one rating per resident-vendor pair
 ratingsSchema.index({ Resident_ID: 1, Vendor_ID: 1 }, { unique: true });
+
+// Optimize vendor rating history queries by date
 ratingsSchema.index({ Vendor_ID: 1, RatingDate: -1 });
 
 export default mongoose.model('Ratings', ratingsSchema);

@@ -7,11 +7,12 @@ import Alert from '../models/Alert.js';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 const ADMIN_ROLES = ['SUPER_ADMIN', 'OPERATIONS', 'SUPPORT'];
 
-// Email validation helper
+// Validate email format
 function isValidEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// Generate a JWT for the admin
 function signAdminToken(admin) {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
@@ -35,6 +36,7 @@ export async function register(req, res) {
     const { email, password, role } = req.body || {};
     const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
 
+    // Validate email, password, and role
     if (!isValidEmail(normalizedEmail) || typeof password !== 'string' || password.length < 8) {
       return res.status(400).json({
         success: false,
@@ -46,6 +48,7 @@ export async function register(req, res) {
       return res.status(400).json({ success: false, message: 'Invalid admin role' });
     }
 
+    // Prevent duplicate admin accounts
     const existingAdmin = await AdminUser.exists({ Email: normalizedEmail });
     if (existingAdmin) {
       return res.status(409).json({ success: false, message: 'An admin with this email already exists' });
@@ -71,11 +74,12 @@ export async function register(req, res) {
   }
 }
 
-// Admin login with JWT token
+// Authenticate admin and return a JWT
 export async function login(req, res) {
   try {
     const { email, password } = req.body || {};
 
+    // Validate login credentials
     if (!isValidEmail(email?.trim()) || typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
@@ -88,6 +92,7 @@ export async function login(req, res) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
+    // Verify the password
     const isMatch = await admin.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -117,6 +122,7 @@ export async function login(req, res) {
 // Get dashboard statistics and recent alerts
 export async function getDashboard(req, res) {
   try {
+    // Fetch dashboard data concurrently
     const [totalActiveVendors, totalResidents, recentAlerts] = await Promise.all([
       Vendor.countDocuments({ Status: 'ACTIVE' }),
       Resident.countDocuments({}),
@@ -128,6 +134,7 @@ export async function getDashboard(req, res) {
         .lean(),
     ]);
 
+    // Format recent alerts for the response
     const formattedRecentAlerts = recentAlerts.map((alert) => ({
       alertId: alert._id,
       vendorName: alert.Vendor_ID?.Name || 'Unknown vendor',
@@ -152,10 +159,10 @@ export async function getDashboard(req, res) {
   }
 }
 
-// Get current admin profile
+// Get the current admin profile
 export async function getMe(req, res) {
   try {
-    // req.admin is built from the database record by requireAdminAuth
+    // req.admin is populated by requireAdminAuth
     const admin = await AdminUser.findById(req.admin.adminId).select('Email Role createdAt').lean();
 
     if (!admin) {

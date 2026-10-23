@@ -5,14 +5,14 @@ import { setPreferences, getPreferences } from '../controllers/preferenceControl
 
 const router = express.Router();
 
-// Auth routes
+// Resident authentication and profile management
 router.post('/auth/sync', requireResidentAuth, syncResident);
 router.get('/auth/me', requireResidentAuth, getMyResidentProfile);
 router.patch('/auth/me', requireResidentAuth, updateMyResidentProfile);
 router.patch('/auth/fcm-token', requireResidentAuth, updateMyFcmToken);
 
-// Preferences
+// Manage preferences with resident ownership verification
 router.put('/:residentId/preferences', requireResidentAuth, attachResident, requireOwnResident, setPreferences);
 router.get('/:residentId/preferences', requireResidentAuth, attachResident, requireOwnResident, getPreferences);
 
-export default router;
+export default router;

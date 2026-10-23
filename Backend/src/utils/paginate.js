@@ -1,7 +1,7 @@
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
-// Parse pagination parameters from query
+// Parse and validate pagination parameters with a maximum limit
 export function parsePagination(query = {}) {
   const requestedPage = parseInt(query.page, 10);
   const requestedLimit = parseInt(query.limit, 10);
@@ -13,7 +13,7 @@ export function parsePagination(query = {}) {
   return { page, limit, skip: (page - 1) * limit };
 }
 
-// Build pagination metadata
+// Generate metadata for paginated responses
 export function buildPageMeta({ page, limit, total }) {
   return {
     page,

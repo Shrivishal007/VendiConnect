@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Vendor category model
+// Define the schema for vendor categories
 const categoriesSchema = new mongoose.Schema({
   Name: {
     type: String,
@@ -9,6 +9,7 @@ const categoriesSchema = new mongoose.Schema({
     trim: true,
   },
 
+  // Optional icon associated with the category
   Icon: {
     type: String,
     trim: true,

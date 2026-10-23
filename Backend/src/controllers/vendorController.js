@@ -6,7 +6,7 @@ import { computeVendorStatus } from '../utils/vendorStatus.js';
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 50;
 
-// Get summary of active vendors
+// Get a summary of active vendors, optionally filtered by category.
 export async function getActiveVendorsSummary(req, res) {
   try {
     const { category } = req.query;
@@ -15,6 +15,7 @@ export async function getActiveVendorsSummary(req, res) {
       return res.status(400).json({ success: false, message: 'Invalid category id' });
     }
 
+    // Apply a default limit and cap requests to prevent oversized queries.
     const requestedLimit = parseInt(req.query.limit, 10);
     const limit =
       Number.isFinite(requestedLimit) && requestedLimit > 0
@@ -37,6 +38,7 @@ export async function getActiveVendorsSummary(req, res) {
 
     const vendorIds = vendors.map((v) => v._id);
 
+    // Fetch all matching locations in one query instead of querying each vendor separately.
     const locations = await Location.find({ Vendor_ID: { $in: vendorIds } })
       .select('Vendor_ID geo')
       .lean();

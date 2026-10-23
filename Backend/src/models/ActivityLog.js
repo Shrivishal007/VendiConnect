@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Activity log for vendor events
+// Define the schema for tracking vendor activity events
 const ActivityLogsSchema = new mongoose.Schema(
   {
     Vendor_ID: {
@@ -33,6 +33,7 @@ const ActivityLogsSchema = new mongoose.Schema(
   { timestamps: false }
 );
 
+// Optimize queries for a vendor's activity history, sorted by event time
 ActivityLogsSchema.index({ Vendor_ID: 1, EventTime: -1 });
 
 export default mongoose.model('ActivityLogs', ActivityLogsSchema);

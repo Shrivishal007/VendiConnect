@@ -8,9 +8,12 @@ const TEXT_MAX_LENGTH = 100;
 export async function listCategoriesWithCounts(req, res) {
   try {
     const categories = await Category.find({}).sort({ Name: 1 }).lean();
+
+    // Count vendors grouped by category
     const counts = await Vendor.aggregate([{ $group: { _id: '$Category_ID', count: { $sum: 1 } } }]);
     const countByCategory = new Map(counts.map((c) => [String(c._id), c.count]));
 
+    // Add vendor count to each category
     const data = categories.map((category) => ({
       ...category,
       vendorCount: countByCategory.get(String(category._id)) || 0,
@@ -28,6 +31,7 @@ export async function createCategory(req, res) {
   try {
     const { name, iconKey } = req.body || {};
 
+    // Validate category name and icon
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ success: false, message: 'name is required' });
     }
@@ -58,10 +62,12 @@ export async function updateCategory(req, res) {
     const { categoryId } = req.params;
     const { name, iconKey } = req.body || {};
 
+    // Validate category ID
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({ success: false, message: 'Invalid categoryId' });
     }
 
+    // Build the update object using only provided fields
     const update = {};
     if (name !== undefined) {
       if (typeof name !== 'string' || !name.trim()) {
@@ -101,15 +107,17 @@ export async function updateCategory(req, res) {
   }
 }
 
-// Delete a category (only if no vendors assigned)
+// Delete a category only if no vendors are assigned
 export async function deleteCategory(req, res) {
   try {
     const { categoryId } = req.params;
 
+    // Validate category ID
     if (!mongoose.Types.ObjectId.isValid(categoryId)) {
       return res.status(400).json({ success: false, message: 'Invalid categoryId' });
     }
 
+    // Prevent deletion if vendors are still assigned
     const vendorsInCategory = await Vendor.countDocuments({ Category_ID: categoryId });
     if (vendorsInCategory > 0) {
       return res.status(409).json({

@@ -1,13 +1,10 @@
 import Alert from '../models/Alert.js';
 import AlertThrottle from '../models/AlertThrottle.js';
 
-// Throttle alerts to prevent spam - default 45 minutes between alerts for same vendor-resident pair
+// Set the minimum interval between alerts for the same vendor-resident pair
 const ALERT_THROTTLE_MINUTES = parseInt(process.env.ALERT_THROTTLE_MINUTES, 10) || 45;
 
-// Atomically claim the throttle slot for a vendor-resident pair.
-// Matches only when the last alert is outside the window (or the pair is new);
-// otherwise the upsert collides with the unique index (E11000), which means "throttled".
-// Two concurrent workers can never both claim the same slot.
+// Atomically claim a throttle slot to prevent duplicate alerts from concurrent workers
 async function claimThrottleSlot(vendorId, residentId, now) {
   const windowStart = new Date(now.getTime() - ALERT_THROTTLE_MINUTES * 60 * 1000);
 
@@ -26,8 +23,8 @@ async function claimThrottleSlot(vendorId, residentId, now) {
   }
 }
 
-// Give the slot back if the alert could not be stored, so the resident is not silenced for nothing
-async function releaseThrottleSlot(vendorId, residentId, claimedAt) {
+// Release the throttle slot if storing the alert fails
+export async function releaseThrottleSlot(vendorId, residentId, claimedAt) {
   try {
     await AlertThrottle.updateOne(
       { Vendor_ID: vendorId, Resident_ID: residentId, LastAlertAt: claimedAt },
@@ -38,7 +35,7 @@ async function releaseThrottleSlot(vendorId, residentId, claimedAt) {
   }
 }
 
-// Record a new alert in the database
+// Store the alert details in the database
 async function recordAlert(vendorId, residentId, etaMinutes, distanceKm, timestamp) {
   return Alert.create({
     Vendor_ID: vendorId,
@@ -49,7 +46,25 @@ async function recordAlert(vendorId, residentId, etaMinutes, distanceKm, timesta
   });
 }
 
-// Claim the throttle slot and record the alert if allowed
+// Claim a throttle slot without recording the alert
+export async function checkThrottleOnly(vendorId, residentId) {
+  const now = new Date();
+  const claimed = await claimThrottleSlot(vendorId, residentId, now);
+  return { allowed: claimed, claimedAt: now };
+}
+
+// Record the alert after a push notification succeeds
+export async function recordAlertAfterPush(vendorId, residentId, etaMinutes, distanceKm, claimedAt) {
+  try {
+    const alert = await recordAlert(vendorId, residentId, etaMinutes, distanceKm, claimedAt);
+    return { success: true, alert };
+  } catch (err) {
+    await releaseThrottleSlot(vendorId, residentId, claimedAt);
+    throw err;
+  }
+}
+
+// Claim the throttle slot and record the alert in one operation for legacy compatibility
 export async function checkAndThrottleAlert(vendorId, residentId, etaMinutes, distanceKm) {
   const now = new Date();
 

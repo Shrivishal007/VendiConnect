@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Connect to MongoDB with connection monitoring
+// Establish a MongoDB connection and monitor its status
 const connectDB = async () => {
   try {
     const uri = process.env.MONGO_URI;
@@ -8,11 +8,12 @@ const connectDB = async () => {
       throw new Error('MONGO_URI is not defined in .env file');
     }
 
+    // Connect with a maximum of 10 pooled connections
     await mongoose.connect(uri, { maxPoolSize: 10 });
 
     console.log(`[DB] MongoDB connected: ${mongoose.connection.host}`);
 
-    // Monitor connection events
+    // Log connection interruptions and errors
     mongoose.connection.on('disconnected', () => {
       console.warn('[DB] MongoDB disconnected');
     });

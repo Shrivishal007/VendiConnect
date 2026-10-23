@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Alert when vendor is near resident
+// Define the schema for vendor proximity alerts sent to residents
 const AlertSchema = new mongoose.Schema(
   {
     Vendor_ID: {
@@ -24,12 +24,14 @@ const AlertSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Store the estimated walking time when the alert was sent
     EtaMinutes: {
       type: Number,
       required: [true, 'EtaMinutes is required'],
       min: 0,
     },
 
+    // Store the vendor-resident distance in kilometers at alert time
     DistanceAt: {
       type: Number,
       required: [true, 'DistanceAt is required'],
@@ -39,7 +41,7 @@ const AlertSchema = new mongoose.Schema(
   { timestamps: false }
 );
 
-// Compound indexes for common query patterns
+// Optimize queries for vendor-resident alert history and resident timelines
 AlertSchema.index({ Vendor_ID: 1, Resident_ID: 1, Timestamp: -1 });
 AlertSchema.index({ Resident_ID: 1, Timestamp: -1 });
 

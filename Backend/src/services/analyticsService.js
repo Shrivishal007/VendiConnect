@@ -6,7 +6,7 @@ import ActivityLog from '../models/ActivityLog.js';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Generate weekly summary report for a vendor including alerts and ratings
+// Generate a weekly vendor summary with alert and rating statistics
 export async function generateWeeklyVendorSummary(vendorId) {
   const vendorObjectId =
     typeof vendorId === 'string' ? new mongoose.Types.ObjectId(vendorId) : vendorId;
@@ -16,9 +16,11 @@ export async function generateWeeklyVendorSummary(vendorId) {
     return null;
   }
 
+  // Define the reporting period
   const periodEnd = new Date();
   const periodStart = new Date(periodEnd.getTime() - SEVEN_DAYS_MS);
 
+  // Fetch alert and rating statistics concurrently
   const [alertStats, ratingStats] = await Promise.all([
     getWeeklyAlertStats(vendorObjectId, periodStart, periodEnd),
     getWeeklyRatingStats(vendorObjectId, periodStart, periodEnd),
@@ -42,7 +44,7 @@ export async function generateWeeklyVendorSummary(vendorId) {
   };
 }
 
-// Calculate alert statistics for a vendor within a time period
+// Aggregate alert statistics for the specified reporting period
 async function getWeeklyAlertStats(vendorObjectId, periodStart, periodEnd) {
   const [result] = await Alert.aggregate([
     {
@@ -78,7 +80,7 @@ async function getWeeklyAlertStats(vendorObjectId, periodStart, periodEnd) {
   );
 }
 
-// Calculate rating statistics for a vendor within a time period
+// Aggregate rating count and average for the specified period
 async function getWeeklyRatingStats(vendorObjectId, periodStart, periodEnd) {
   const [result] = await Ratings.aggregate([
     {
@@ -111,7 +113,7 @@ async function getWeeklyRatingStats(vendorObjectId, periodStart, periodEnd) {
   );
 }
 
-// Get star rating distribution (1-5 stars) for a vendor
+// Calculate the distribution of ratings from 1 to 5 stars
 async function getStarDistribution(vendorObjectId, periodStart, periodEnd) {
   const rows = await Ratings.aggregate([
     {
@@ -133,7 +135,7 @@ async function getStarDistribution(vendorObjectId, periodStart, periodEnd) {
   return distribution;
 }
 
-// Calculate vendor active hours based on location update events
+// Estimate daily active hours from the first and last location updates
 async function getVendorActiveHours(vendorObjectId, periodStart, periodEnd) {
   const results = await ActivityLog.aggregate([
     {
@@ -168,7 +170,7 @@ async function getVendorActiveHours(vendorObjectId, periodStart, periodEnd) {
   };
 }
 
-// Generate comprehensive vendor analytics with configurable time window
+// Generate detailed vendor analytics for a configurable time window
 export async function generateVendorAnalytics(vendorId, windowDays = 7) {
   const vendorObjectId =
     typeof vendorId === 'string' ? new mongoose.Types.ObjectId(vendorId) : vendorId;
@@ -178,9 +180,11 @@ export async function generateVendorAnalytics(vendorId, windowDays = 7) {
     return null;
   }
 
+  // Define the requested analytics period
   const periodEnd = new Date();
   const periodStart = new Date(periodEnd.getTime() - windowDays * 24 * 60 * 60 * 1000);
 
+  // Collect analytics metrics concurrently
   const [alertStats, starDistribution, activeHours] = await Promise.all([
     getWeeklyAlertStats(vendorObjectId, periodStart, periodEnd),
     getStarDistribution(vendorObjectId, periodStart, periodEnd),

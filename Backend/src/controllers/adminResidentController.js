@@ -9,12 +9,14 @@ export async function listResidents(req, res) {
     const { q } = req.query;
     const { page, limit, skip } = parsePagination(req.query);
 
+    // Build a case-insensitive name search filter
     const match = {};
     if (q) {
       const escaped = String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       match.Name = { $regex: escaped, $options: 'i' };
     }
 
+    // Fetch paginated residents and total count concurrently
     const [residents, total] = await Promise.all([
       Resident.find(match)
         .select('Name Address Latitude Longitude NotificationRadius createdAt')
@@ -37,6 +39,7 @@ export async function getResidentDetail(req, res) {
   try {
     const { residentId } = req.params;
 
+    // Validate the resident ID
     if (!mongoose.Types.ObjectId.isValid(residentId)) {
       return res.status(400).json({ success: false, message: 'Invalid residentId' });
     }
@@ -49,6 +52,7 @@ export async function getResidentDetail(req, res) {
       return res.status(404).json({ success: false, message: 'Resident not found' });
     }
 
+    // Fetch preferences and populate category details
     const preferences = await Preferences.find({ Resident_ID: residentId })
       .populate({ path: 'Category_ID', select: 'Name' })
       .lean();

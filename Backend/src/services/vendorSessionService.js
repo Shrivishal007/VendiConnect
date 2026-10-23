@@ -4,9 +4,9 @@ import Location from '../models/Location.js';
 import { hashPhoneNumber } from '../utils/privacy.js';
 import { logActivity } from './activityLogService.js';
 
-// Session state machine: PENDING_CONSENT -> ACTIVE -> REVOKED (and back to ACTIVE if consent is granted again)
+// Manage vendor consent and session states throughout the tracking lifecycle
 
-// Stop tracking a vendor: remove the stored location and take them off the live map
+// Stop location tracking and remove the vendor from the live map
 async function stopTracking(vendorId) {
   await Promise.all([
     Location.deleteOne({ Vendor_ID: vendorId }),
@@ -14,7 +14,7 @@ async function stopTracking(vendorId) {
   ]);
 }
 
-// Record vendor consent decision (grant or revoke)
+// Record a vendor's consent decision and update the session
 export async function recordConsent(vendorId, rawPhoneNumber, consentGiven) {
   const now = new Date();
 
@@ -24,7 +24,7 @@ export async function recordConsent(vendorId, rawPhoneNumber, consentGiven) {
     Consent: consentGiven,
     Status: consentGiven ? 'ACTIVE' : 'REVOKED',
     LastActive: now,
-    // ConsentTimestamp is kept on withdrawal so the original grant stays on record
+    // Preserve the original consent timestamp when consent is withdrawn
     ...(consentGiven ? { ConsentTimestamp: now, ConsentWithdrawnAt: null } : { ConsentWithdrawnAt: now }),
   };
 
@@ -35,15 +35,18 @@ export async function recordConsent(vendorId, rawPhoneNumber, consentGiven) {
     runValidators: true,
   });
 
+  // Remove stored location data when consent is denied or withdrawn
   if (!consentGiven) {
     await stopTracking(vendorId);
   }
+
+  // Log the consent decision for auditing
   logActivity(vendorId, consentGiven ? 'Consent Granted' : 'Consent Withdrawn');
 
   return session;
 }
 
-// Withdraw vendor consent: mark session revoked and stop tracking. Returns null if no session exists
+// Withdraw consent, stop tracking, and return null if no session exists
 export async function withdrawConsent(vendorId) {
   const now = new Date();
 
@@ -62,20 +65,21 @@ export async function withdrawConsent(vendorId) {
     return null;
   }
 
+  // Delete location data and deactivate the vendor
   await stopTracking(vendorId);
   logActivity(vendorId, 'Consent Withdrawn');
 
   return session;
 }
 
-// Check if vendor has active consent
+// Verify that the vendor has explicitly granted and currently maintains consent
 export async function hasActiveConsent(vendorId) {
   const session = await Sessions.findOne({ Vendor_ID: vendorId }).select('Consent Status').lean();
 
   return Boolean(session && session.Consent === true && session.Status === 'ACTIVE');
 }
 
-// Update last active timestamp for a vendor session (never throws)
+// Refresh the session's last-active timestamp without interrupting the caller
 export async function touchLastActive(vendorId) {
   try {
     await Sessions.updateOne({ Vendor_ID: vendorId }, { $set: { LastActive: new Date() } });
@@ -84,7 +88,7 @@ export async function touchLastActive(vendorId) {
   }
 }
 
-// Get vendor session details
+// Retrieve the vendor's session details
 export async function getSession(vendorId) {
   return Sessions.findOne({ Vendor_ID: vendorId }).lean();
 }

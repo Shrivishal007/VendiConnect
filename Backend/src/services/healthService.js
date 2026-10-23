@@ -1,10 +1,7 @@
-import express from 'express';
 import mongoose from 'mongoose';
 import { SLA_TARGETS } from '../config/slaTargets.js';
 
-const router = express.Router();
-
-// Mongoose connection state labels
+// Map MongoDB connection states to readable labels
 const READY_STATE_LABELS = {
   0: 'disconnected',
   1: 'connected',
@@ -12,50 +9,65 @@ const READY_STATE_LABELS = {
   3: 'disconnecting',
 };
 
-// Format bytes to human-readable MB
+// Convert bytes to megabytes for health reporting
 function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// Health check endpoint with database ping and memory monitoring
-router.get('/', async (req, res) => {
+// Collect database, performance, and application health metrics
+export async function getHealthStatus() {
   const dbReadyState = mongoose.connection.readyState;
   const dbConnected = dbReadyState === 1;
 
   let dbPingMs = null;
-  if (dbConnected) {
+  let dbPingSucceeded = false;
+
+  // Measure database responsiveness with an admin ping
+  if (dbConnected && mongoose.connection.db) {
     try {
       const start = Date.now();
+
       await mongoose.connection.db.admin().ping();
+
       dbPingMs = Date.now() - start;
+      dbPingSucceeded = true;
     } catch (err) {
-      console.error('[health] DB ping failed despite readyState=connected:', err.message);
+      console.error('[health] DB ping failed:', err.message);
     }
   }
 
+  const dbHealthy = dbConnected && dbPingSucceeded;
   const memoryUsage = process.memoryUsage();
 
-  const payload = {
-    success: true,
-    status: dbConnected ? 'ok' : 'degraded',
+  // Retrieve the configured database ping latency target
+  const dbPingTargetMs = SLA_TARGETS.DB_PING_LATENCY_MS ?? null;
+
+  return {
+    success: dbHealthy,
+    status: dbHealthy ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
+
     database: {
       connected: dbConnected,
-      state: READY_STATE_LABELS[dbReadyState] || 'unknown',
+      pingSucceeded: dbPingSucceeded,
+      state: READY_STATE_LABELS[dbReadyState] ?? 'unknown',
       pingMs: dbPingMs,
-      withinSlaTarget: dbPingMs === null ? null : dbPingMs <= SLA_TARGETS.GEOSPATIAL_QUERY_LATENCY_MS,
+      withinSlaTarget:
+        dbPingMs === null || dbPingTargetMs === null
+          ? null
+          : dbPingMs <= dbPingTargetMs,
     },
+
     slaTargets: SLA_TARGETS,
+
+    // Report process memory consumption
     memory: {
       rss: formatBytes(memoryUsage.rss),
       heapUsed: formatBytes(memoryUsage.heapUsed),
       heapTotal: formatBytes(memoryUsage.heapTotal),
     },
+
     env: process.env.NODE_ENV || 'development',
   };
-
-  return res.status(dbConnected ? 200 : 503).json(payload);
-});
-
-export default router;
+}

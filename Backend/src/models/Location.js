@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const locationTTLMinutes = parseInt(process.env.LOCATION_TTL_MINUTES, 10) || 30;
 
-// Vendor location with geo-spatial indexing and TTL
+// Store vendor locations with geospatial indexing and automatic expiration
 const locationSchema = new mongoose.Schema(
   {
     Vendor_ID: {
@@ -24,6 +24,7 @@ const locationSchema = new mongoose.Schema(
       coordinates: {
         type: [Number],
         required: true,
+        // Validate GeoJSON coordinates in [longitude, latitude] order
         validate: {
           validator: (coordinates) =>
             Array.isArray(coordinates) &&
@@ -42,6 +43,7 @@ const locationSchema = new mongoose.Schema(
       default: Date.now,
     },
 
+    // Set the location expiration time using the configured TTL
     ExpiresAt: {
       type: Date,
       required: true,
@@ -51,7 +53,10 @@ const locationSchema = new mongoose.Schema(
   { timestamps: false }
 );
 
+// Enable geospatial queries for nearby vendor searches
 locationSchema.index({ geo: '2dsphere' });
+
+// Automatically delete expired location documents
 locationSchema.index({ ExpiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model('Location', locationSchema);

@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 
-// One document per vendor-resident pair holding the time of the last alert.
-// The unique index lets alertService claim a throttle slot atomically.
+// Store the last alert timestamp for each vendor-resident pair
 const AlertThrottleSchema = new mongoose.Schema(
   {
     Vendor_ID: {
@@ -24,9 +23,10 @@ const AlertThrottleSchema = new mongoose.Schema(
   { timestamps: false }
 );
 
+// Ensure each vendor-resident pair has only one throttle record
 AlertThrottleSchema.index({ Vendor_ID: 1, Resident_ID: 1 }, { unique: true });
 
-// Housekeeping only: must stay far longer than ALERT_THROTTLE_MINUTES
+// Automatically remove old throttle records after seven days
 AlertThrottleSchema.index({ LastAlertAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });
 
 export default mongoose.model('AlertThrottle', AlertThrottleSchema);

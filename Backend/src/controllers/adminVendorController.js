@@ -17,6 +17,7 @@ export async function listVendors(req, res) {
     const { status, category, q } = req.query;
     const { page, limit, skip } = parsePagination(req.query);
 
+    // Build filters from the provided query parameters
     const match = {};
     if (status) {
       if (!VALID_STATUSES.includes(status)) {
@@ -37,6 +38,7 @@ export async function listVendors(req, res) {
       match.Name = { $regex: escapeRegex(q.trim()), $options: 'i' };
     }
 
+    // Fetch paginated vendors and total count concurrently
     const [vendors, total] = await Promise.all([
       Vendor.find(match)
         .populate({ path: 'Category_ID', select: 'Name' })
@@ -47,6 +49,7 @@ export async function listVendors(req, res) {
       Vendor.countDocuments(match),
     ]);
 
+    // Fetch location and session details for the listed vendors
     const vendorIds = vendors.map((v) => v._id);
     const [locations, sessions] = await Promise.all([
       Location.find({ Vendor_ID: { $in: vendorIds } }).select('Vendor_ID UpdatedAt ExpiresAt').lean(),
@@ -55,6 +58,7 @@ export async function listVendors(req, res) {
     const locationByVendor = new Map(locations.map((l) => [String(l.Vendor_ID), l]));
     const sessionByVendor = new Map(sessions.map((s) => [String(s.Vendor_ID), s]));
 
+    // Format vendor details for the API response
     const data = vendors.map((vendor) => ({
       Vendor_ID: vendor._id,
       VendorName: vendor.Name,
@@ -80,6 +84,7 @@ export async function getVendorDetail(req, res) {
   try {
     const { vendorId } = req.params;
 
+    // Validate the vendor ID
     if (!mongoose.Types.ObjectId.isValid(vendorId)) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
     }
@@ -89,6 +94,7 @@ export async function getVendorDetail(req, res) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
+    // Fetch the vendor's latest location and session details
     const [location, session] = await Promise.all([
       Location.findOne({ Vendor_ID: vendorId }).lean(),
       Sessions.findOne({ Vendor_ID: vendorId }).lean(),
@@ -110,6 +116,7 @@ export async function updateVendorStatus(req, res) {
     const { vendorId } = req.params;
     const { status } = req.body || {};
 
+    // Validate vendor ID and requested status
     if (!mongoose.Types.ObjectId.isValid(vendorId)) {
       return res.status(400).json({ success: false, message: 'Invalid vendorId' });
     }
@@ -123,10 +130,12 @@ export async function updateVendorStatus(req, res) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
+    // Remove the vendor's location when they are not active
     if (status !== 'ACTIVE') {
       await Location.deleteOne({ Vendor_ID: vendorId });
     }
 
+    // Log the status change for auditing
     const actor = req.admin?.email || 'unknown-admin';
     console.log(`[adminVendorController] Status changed for vendor ${vendorId} to ${status} by ${actor}`);
 
